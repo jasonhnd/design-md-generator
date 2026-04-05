@@ -3,3 +3,4 @@ node_modules/
 dist/
 *.png
 raw-data.json
+.DS_Store
