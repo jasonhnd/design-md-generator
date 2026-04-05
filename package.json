@@ -1,0 +1,21 @@
+{
+  "name": "design-md-generator",
+  "version": "0.1.0",
+  "description": "Generate publication-quality DESIGN.md files from any website URL",
+  "scripts": {
+    "extract": "ts-node scripts/extract.ts",
+    "validate": "ts-node scripts/validate.ts"
+  },
+  "dependencies": {
+    "playwright": "^1.50.0",
+    "playwright-extra": "^4.3.0",
+    "puppeteer-extra-plugin-stealth": "^2.11.0",
+    "css-tree": "^3.0.0",
+    "culori": "^4.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "ts-node": "^10.9.0",
+    "@types/node": "^20.0.0"
+  }
+}
