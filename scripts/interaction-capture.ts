@@ -18,9 +18,9 @@ const CAPTURED_PROPERTIES = [
 
 type CapturedProperty = (typeof CAPTURED_PROPERTIES)[number];
 
-const PER_ELEMENT_TIMEOUT = 2_000;
+const PER_ELEMENT_TIMEOUT = 500;
 const PAGE_TIMEOUT = 15_000;
-const MAX_ELEMENTS = 50;
+const MAX_ELEMENTS = 20;
 const MAX_TAB_PRESSES = 20;
 
 // ─── Element Discovery ──────────────────────────────────────────────────────

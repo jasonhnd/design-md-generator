@@ -1,6 +1,6 @@
 {
   "name": "design-md-generator",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "description": "Generate publication-quality DESIGN.md files from any website URL",
   "scripts": {
     "extract": "ts-node scripts/extract.ts",

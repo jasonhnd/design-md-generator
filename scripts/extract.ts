@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { crawlPages } from './crawl';
+import { crawlPages, Semaphore } from './crawl';
 import { collectDOM } from './dom-collector';
 import { analyzeCSS } from './css-analyzer';
 import { captureInteractions } from './interaction-capture';
@@ -43,7 +43,7 @@ function parseArgs(argv: string[]): ExtractOptions {
   const args = argv.slice(2);
   const urls: string[] = [];
   let output = '';
-  let concurrency = 5;
+  let concurrency = 10;
   let maxPages = 20;
   const extraUrls: string[] = [];
   let noDarkMode = false;
@@ -107,7 +107,14 @@ function parseArgs(argv: string[]): ExtractOptions {
   // Default output directory
   if (!output) {
     const domain = new URL(normalizedUrls[0]).hostname;
-    output = path.join('output', domain);
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const hh = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    const dateStr = `${yyyy}_${mm}${dd}_${hh}${min}`;
+    output = path.join('output', `${dateStr}_${domain}`);
   }
 
   return {
@@ -128,7 +135,7 @@ Usage: npx ts-node scripts/extract.ts <url1> [url2] [url3] ...
 
 Options:
   --output <dir>         Output directory (default: output/<domain>/)
-  --concurrency <n>      Playwright concurrency (default: 5)
+  --concurrency <n>      Playwright concurrency (default: 10)
   --max-pages <n>        Max pages to crawl (default: 20)
   --extra-urls <file>    File with additional URLs (one per line)
   --no-dark-mode         Skip dark mode detection
@@ -208,48 +215,53 @@ async function extract(options: ExtractOptions): Promise<void> {
 
   const pageExtractions: PageExtraction[] = [];
   let totalElements = 0;
+  const extractSemaphore = new Semaphore(options.concurrency);
 
-  for (const pageData of crawlResult.pages) {
-    const context = await browser.newContext({
-      viewport: { width: 1440, height: 900 },
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-    });
-    const page = await context.newPage();
+  await Promise.all(
+    crawlResult.pages.map(async (pageData) => {
+      await extractSemaphore.acquire();
+      const context = await browser.newContext({
+        viewport: { width: 1440, height: 900 },
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+      });
+      const page = await context.newPage();
 
-    try {
-      log(options.verbose, `  Extracting: ${pageData.url}`);
-      await page.goto(pageData.url, { waitUntil: 'networkidle', timeout: 30000 });
-      await page.waitForTimeout(1000);
-
-      // DOM collection
-      const dom = await collectDOM(page);
-      totalElements += dom.elements.length;
-
-      // CSS analysis
-      let css: CSSAnalysis | undefined;
       try {
-        css = await analyzeCSS(page);
-      } catch (err) {
-        log(options.verbose, `    CSS analysis failed: ${err}`);
-      }
+        log(options.verbose, `  Extracting: ${pageData.url}`);
+        await page.goto(pageData.url, { waitUntil: 'networkidle', timeout: 30000 });
+        await page.waitForTimeout(1000);
 
-      // Interaction capture
-      let interactions: InteractionData | undefined;
-      if (!options.noInteraction) {
+        // DOM collection
+        const dom = await collectDOM(page);
+
+        // CSS analysis
+        let css: CSSAnalysis | undefined;
         try {
-          interactions = await captureInteractions(page);
+          css = await analyzeCSS(page);
         } catch (err) {
-          log(options.verbose, `    Interaction capture failed: ${err}`);
+          log(options.verbose, `    CSS analysis failed for ${pageData.url}: ${err}`);
         }
-      }
 
-      pageExtractions.push({ url: pageData.url, dom, css, interactions });
-    } catch (err) {
-      console.log(`    WARN: Extraction failed for ${pageData.url}: ${err}`);
-    } finally {
-      await context.close();
-    }
-  }
+        // Interaction capture
+        let interactions: InteractionData | undefined;
+        if (!options.noInteraction) {
+          try {
+            interactions = await captureInteractions(page);
+          } catch (err) {
+            log(options.verbose, `    Interaction capture failed for ${pageData.url}: ${err}`);
+          }
+        }
+
+        pageExtractions.push({ url: pageData.url, dom, css, interactions });
+        totalElements += dom.elements.length;
+      } catch (err) {
+        console.log(`    WARN: Extraction failed for ${pageData.url}: ${err}`);
+      } finally {
+        await context.close();
+        extractSemaphore.release();
+      }
+    })
+  );
 
   console.log(`  Extracted ${totalElements} elements from ${pageExtractions.length} pages`);
 
@@ -266,17 +278,27 @@ async function extract(options: ExtractOptions): Promise<void> {
 
   if (!options.noDarkMode && pageExtractions.length > 0) {
     log(options.verbose, 'Detecting dark mode...');
-    const firstCss = pageExtractions[0].css;
-    if (firstCss) {
+    // Find the page with the most CSS variables to use as dark mode probe
+    let targetPage = pageExtractions[0];
+    let maxVars = targetPage.dom.cssVariables.length;
+    for (const pe of pageExtractions) {
+      if (pe.css && pe.dom.cssVariables.length > maxVars) {
+        maxVars = pe.dom.cssVariables.length;
+        targetPage = pe;
+      }
+    }
+
+    if (targetPage.css) {
       const context = await browser.newContext({
         viewport: { width: 1440, height: 900 },
         userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
       });
       const page = await context.newPage();
       try {
-        await page.goto(options.urls[0], { waitUntil: 'networkidle', timeout: 30000 });
+        log(options.verbose, `  Using ${targetPage.url} for dark mode detection...`);
+        await page.goto(targetPage.url, { waitUntil: 'networkidle', timeout: 30000 });
         await page.waitForTimeout(1000);
-        darkModeData = await detectDarkMode(page, firstCss);
+        darkModeData = await detectDarkMode(page, targetPage.css);
         console.log(`  Dark mode: ${darkModeData.supported ? `detected (${darkModeData.detectionMethod})` : 'not detected'}`);
 
         // Save dark mode screenshots

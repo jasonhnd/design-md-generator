@@ -60,6 +60,28 @@ If `ts-node` is not found, install it: `npm install -D ts-node typescript`.
 
 ---
 
+## Step 0: Version Check & Auto-Update
+
+As an AI agent, you MUST perform this check BEFORE running any extractions to ensure the user is taking advantage of the latest features and bug fixes.
+
+**1. Check for remote updates:**
+Run the following command to silently fetch the latest remote status:
+```bash
+cd /path/to/dmdg && git remote update && git status -uno
+```
+
+**2. Interpret the Result:**
+- If the output contains `Your branch is behind 'origin/main'`, a new version is available.
+- If the command fails (e.g., the user downloaded a ZIP instead of cloning via git), silently skip this step and proceed to Step 1.
+
+**3. Prompt the User:**
+If an update is available, pause your execution and explicitly ask the user:
+> "A new version of **Design MD Generator** is available on GitHub. Would you like me to seamlessly update it for you (`git pull`) before we proceed with the extraction?"
+
+If the user agrees, run `git pull` (and follow up with `npm install` just in case dependencies changed), then proceed to Step 1. If they decline, proceed to Step 1 immediately.
+
+---
+
 ## Step 1: Run Extraction
 
 **Command:**

@@ -83,8 +83,8 @@ function checkUnknownFonts(md: string, tokens: DesignTokens): { passed: boolean;
     if (/^[a-z-]+:/.test(val)) continue;
     if (/^\d/.test(val)) continue;
     if (val.length > 60) continue;
-    // Skip common non-font tokens
-    if (/^(none|inherit|initial|auto|normal|bold|semibold|medium|regular|light)$/i.test(val)) continue;
+    // Skip common non-font tokens and system fonts
+    if (/^(none|inherit|initial|auto|normal|bold|semibold|medium|regular|light|sans-serif|serif|system-ui|-apple-system|blinkmacsystemfont|segoe ui|roboto|monospace)$/i.test(val)) continue;
 
     const normalized = val.toLowerCase().replace(/['"]/g, '');
     if (!knownFonts.has(normalized)) {
@@ -156,23 +156,22 @@ function checkFormatConsistency(md: string): { passed: boolean; failures: Valida
 
 function checkSectionCompleteness(md: string): { passed: boolean; failures: ValidationIssue[] } {
   const requiredSections = [
-    '## 1. Visual Theme & Atmosphere',
-    '## 2. Color Palette & Roles',
-    '## 3. Typography Rules',
-    '## 4. Component Stylings',
-    '## 5. Layout Principles',
-    '## 6. Depth & Elevation',
-    "## 7. Do's and Don'ts",
-    '## 8. Responsive Behavior',
-    '## 9. Agent Prompt Guide',
+    { label: 'Visual Theme & Atmosphere', regex: /##\s*(?:\d\.\s*)?Visual Theme & Atmosphere/i },
+    { label: 'Color Palette & Roles', regex: /##\s*(?:\d\.\s*)?Color Palette & Roles/i },
+    { label: 'Typography Rules', regex: /##\s*(?:\d\.\s*)?Typography Rules/i },
+    { label: 'Component Stylings', regex: /##\s*(?:\d\.\s*)?Component Stylings/i },
+    { label: 'Layout Principles', regex: /##\s*(?:\d\.\s*)?Layout Principles/i },
+    { label: 'Depth & Elevation', regex: /##\s*(?:\d\.\s*)?Depth & Elevation/i },
+    { label: "Do's and Don'ts", regex: /##\s*(?:\d\.\s*)?Do's and Don'ts/i },
+    { label: 'Responsive Behavior', regex: /##\s*(?:\d\.\s*)?Responsive Behavior/i },
+    { label: 'Agent Prompt Guide', regex: /##\s*(?:\d\.\s*)?Agent Prompt Guide/i },
   ];
 
-  const mdLower = md.toLowerCase();
   const failures: ValidationIssue[] = [];
 
   for (const section of requiredSections) {
-    if (!mdLower.includes(section.toLowerCase())) {
-      failures.push({ type: 'missing-section', value: section, message: `Required section "${section}" not found` });
+    if (!section.regex.test(md)) {
+      failures.push({ type: 'missing-section', value: section.label, message: `Required section "${section.label}" not found` });
     }
   }
   return { passed: failures.length === 0, failures };
@@ -182,7 +181,7 @@ function checkContent(md: string): { passed: boolean; warnings: ValidationIssue[
   const warnings: ValidationIssue[] = [];
 
   // Typography table check
-  const typoSection = md.match(/##\s*3\.\s*Typography Rules[\s\S]*?(?=##\s*4\.|$)/i);
+  const typoSection = md.match(/##\s*(?:\d\.\s*)?Typography Rules[\s\S]*?(?=\n##\s|$)/i);
   if (typoSection) {
     const hasTable = /\|.*Role.*\|.*Font.*\|.*Size.*\|/i.test(typoSection[0]) ||
                      /\|.*Font.*\|.*Size.*\|/i.test(typoSection[0]);
@@ -192,7 +191,7 @@ function checkContent(md: string): { passed: boolean; warnings: ValidationIssue[
   }
 
   // Color count check
-  const colorSection = md.match(/##\s*2\.\s*Color Palette[\s\S]*?(?=##\s*3\.|$)/i);
+  const colorSection = md.match(/##\s*(?:\d\.\s*)?Color Palette[\s\S]*?(?=\n##\s|$)/i);
   if (colorSection) {
     const hexLines = colorSection[0].split('\n').filter((l) => /#[0-9a-fA-F]{3,8}\b/.test(l));
     if (hexLines.length < 8) {

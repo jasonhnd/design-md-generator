@@ -1,5 +1,7 @@
 # Design MD Generator
 
+![License](https://img.shields.io/badge/License-Apache%202.0-blue) ![Claude Code](https://img.shields.io/badge/Claude%20Code-Skill-green) ![skills.sh](https://img.shields.io/badge/skills.sh-Compatible-yellow) ![version](https://img.shields.io/badge/version-1.1.0-purple)
+
 Generate publication-quality `DESIGN.md` files from any website URL. Analyzes CSS, typography, colors, components, and layout to produce a complete design system reference that AI agents can use to reproduce a website's visual style.
 
 ## How It Works
@@ -98,10 +100,14 @@ output/          # Runtime extraction results (gitignored)
 SKILL.md         # Claude Code skill instructions
 ```
 
+## Acknowledgements
+
+The core conceptual workflow, semantic token format, and foundational methodology of this tool were inspired by and derived from [VoltAgent/awesome-design-md](https://github.com/VoltAgent/awesome-design-md). Special thanks to the VoltAgent team for their pioneering research in AI-friendly design system documentation.
+
 ## Disclaimer
 
 Generated DESIGN.md files are extracted from publicly accessible CSS values and are not official design system documentation. Colors, fonts, and spacing may not be 100% accurate. Commercial fonts detected during extraction require separate licensing.
 
 ## License
 
-MIT
+Apache 2.0

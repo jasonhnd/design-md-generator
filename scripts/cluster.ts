@@ -456,12 +456,28 @@ export function clusterTokens(pages: PageExtraction[], cssVariables: CSSVariable
   const clustered: ClusteredColor[] = [];
   const sortedByFreq = [...withOklch].sort((a, b) => b.frequency - a.frequency);
 
+  // Achromatic snapping for near-white and near-black
+  for (const color of sortedByFreq) {
+    if (color.oklch && color.oklch.c < 0.01) {
+      if (color.oklch.l >= 0.98) {
+        color.hex = '#ffffff';
+        color.rgba = { r: 255, g: 255, b: 255, a: 1 };
+        color.oklch = { l: 1, c: 0, h: 0 };
+      } else if (color.oklch.l <= 0.02) {
+        color.hex = '#000000';
+        color.rgba = { r: 0, g: 0, b: 0, a: 1 };
+        color.oklch = { l: 0, c: 0, h: 0 };
+      }
+    }
+  }
+
   for (const color of sortedByFreq) {
     let merged = false;
     if (color.oklch) {
       for (const existing of clustered) {
         if (!existing.oklch) continue;
-        if (deltaE(color.oklch, existing.oklch) < 3) {
+        const threshold = color.frequency < 5 ? 6 : 3;
+        if (deltaE(color.oklch, existing.oklch) < threshold) {
           // Merge into existing cluster representative
           existing.frequency += color.frequency;
           for (const [ctx, count] of Object.entries(color.usedAs) as [UsageContext, number][]) {
