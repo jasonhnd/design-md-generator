@@ -1,10 +1,19 @@
 {
   "name": "design-md-generator",
-  "version": "1.1.0",
+  "version": "0.0.2",
   "description": "Generate publication-quality DESIGN.md files from any website URL",
+  "bin": {
+    "design-md-gen": "./scripts/cli.ts"
+  },
   "scripts": {
     "extract": "ts-node scripts/extract.ts",
-    "validate": "ts-node scripts/validate.ts"
+    "validate": "ts-node scripts/validate.ts",
+    "preview": "ts-node scripts/preview-gen.ts",
+    "report": "ts-node scripts/report-gen.ts",
+    "proof": "ts-node scripts/proof.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "playwright": "^1.50.0",
@@ -16,6 +25,7 @@
   "devDependencies": {
     "typescript": "^5.5.0",
     "ts-node": "^10.9.0",
-    "@types/node": "^20.0.0"
+    "@types/node": "^20.0.0",
+    "vitest": "^3.0.0"
   }
 }

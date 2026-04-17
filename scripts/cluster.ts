@@ -52,7 +52,7 @@ interface RGBA {
   a: number;
 }
 
-function parseColor(value: string): RGBA | null {
+export function parseColor(value: string): RGBA | null {
   if (!value || value === 'none' || value === 'currentcolor' || value === 'currentColor' || value === 'inherit') {
     return null;
   }
@@ -189,7 +189,7 @@ function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v));
 }
 
-function rgbaToHex(r: number, g: number, b: number, _a?: number): string {
+export function rgbaToHex(r: number, g: number, b: number, _a?: number): string {
   const toHex = (n: number) => Math.round(clampByte(n)).toString(16).padStart(2, '0');
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
@@ -245,7 +245,7 @@ function relativeLuminance(r: number, g: number, b: number): number {
   return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
 }
 
-function wcagContrast(hex1: string, hex2: string): number {
+export function wcagContrast(hex1: string, hex2: string): number {
   const c1 = parseColor(hex1);
   const c2 = parseColor(hex2);
   if (!c1 || !c2) return 1;
@@ -288,7 +288,7 @@ function mode<T>(arr: T[]): T | undefined {
   return best?.value;
 }
 
-function parsePxValue(val: string): number | null {
+export function parsePxValue(val: string): number | null {
   if (!val || val === 'auto' || val === 'none' || val === 'normal') return null;
   const num = parseFloat(val);
   if (isNaN(num)) return null;
@@ -309,6 +309,65 @@ interface ColorEntry {
   usedAs: Record<UsageContext, number>;
   pages: Set<string>;
   cssVariableNames: Set<string>;
+}
+
+// ─── Exported Utilities (for testing) ────────────────────────────────────────
+
+export interface OKLCH {
+  l: number;
+  c: number;
+  h: number;
+}
+
+/** Euclidean distance in OKLCH space, scaled ×100 */
+export function deltaE(a: OKLCH, b: OKLCH): number {
+  const dl = (a.l - b.l) * 100;
+  const dc = (a.c - b.c) * 100;
+  const dhRad = ((a.h - b.h) * Math.PI) / 180;
+  const dh = 2 * Math.sqrt(a.c * b.c) * Math.sin(dhRad / 2) * 100;
+  return Math.sqrt(dl * dl + dc * dc + dh * dh);
+}
+
+/** Split box-shadow into layers, respecting commas inside rgba()/hsla() */
+export function splitShadowLayers(value: string): string[] {
+  const layers: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < value.length; i++) {
+    if (value[i] === '(') depth++;
+    else if (value[i] === ')') depth--;
+    else if (value[i] === ',' && depth === 0) {
+      layers.push(value.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  layers.push(value.slice(start).trim());
+  return layers.filter((l) => l.length > 0);
+}
+
+/** Classify a CSS box-shadow string by type */
+export function classifyShadow(value: string): 'border-shadow' | 'ring' | 'elevation' | 'inset' | 'complex-stack' {
+  const parts = splitShadowLayers(value);
+  if (parts.length > 1) return 'complex-stack';
+  if (value.includes('inset')) return 'inset';
+
+  const cleaned = value
+    .replace(/rgba?\([^)]+\)/g, '')
+    .replace(/hsla?\([^)]+\)/g, '')
+    .replace(/#[0-9a-fA-F]{3,8}/g, '')
+    .trim();
+
+  const nums = cleaned.match(/-?\d+(\.\d+)?(px)?/g)?.map((n) => parseFloat(n)) ?? [];
+  const offsetX = nums[0] ?? 0;
+  const offsetY = nums[1] ?? 0;
+  const blur = nums[2] ?? 0;
+  const spread = nums[3] ?? 0;
+
+  if (offsetX === 0 && offsetY === 0 && blur === 0 && spread > 0) return 'border-shadow';
+  if (offsetX === 0 && offsetY === 0 && blur === 0 && spread !== 0) return 'ring';
+  if (offsetY > 0 && blur > 0) return 'elevation';
+
+  return 'elevation';
 }
 
 // ─── Main Export ─────────────────────────────────────────────────────────────
@@ -441,15 +500,6 @@ export function clusterTokens(pages: PageExtraction[], cssVariables: CSSVariable
       return { ...e, oklch: null };
     }
   });
-
-  // deltaE using Euclidean distance in OKLCH
-  function deltaE(a: { l: number; c: number; h: number }, b: { l: number; c: number; h: number }): number {
-    const dl = (a.l - b.l) * 100;
-    const dc = (a.c - b.c) * 100;
-    const dhRad = ((a.h - b.h) * Math.PI) / 180;
-    const dh = 2 * Math.sqrt(a.c * b.c) * Math.sin(dhRad / 2) * 100;
-    return Math.sqrt(dl * dl + dc * dc + dh * dh);
-  }
 
   // Cluster within each usage group context, deltaE < 3
   // Simple greedy clustering: sort by frequency desc, assign to first cluster within threshold
@@ -814,7 +864,8 @@ export function clusterTokens(pages: PageExtraction[], cssVariables: CSSVariable
   }
 
   function classifyShadow(value: string): ShadowToken['type'] {
-    const parts = value.split(',').map((s) => s.trim());
+    // Split on commas OUTSIDE parentheses to handle rgba(r,g,b,a) correctly
+    const parts = splitShadowLayers(value);
     if (parts.length > 1) return 'complex-stack';
     if (value.includes('inset')) return 'inset';
 
@@ -1402,5 +1453,104 @@ export function clusterTokens(pages: PageExtraction[], cssVariables: CSSVariable
     },
 
     cssVariables,
+  };
+}
+
+// ─── Incremental Merge ──────────────────────────────────────────────────────
+
+/** Merge incoming tokens into an existing set, deduplicating by perceptual similarity */
+export function mergeTokenSets(existing: DesignTokens, incoming: DesignTokens): DesignTokens {
+  // @ts-expect-error culori has no bundled declarations in this setup
+  const toOklch = (culori as typeof import('culori')).converter('oklch');
+
+  // ── Color merge: delta-E < 3 → combine frequencies ────────────────────
+  const mergedColors = [...existing.colorTokens];
+
+  for (const ic of incoming.colorTokens) {
+    const icRgb = { mode: 'rgb' as const, r: ic.rgba[0] / 255, g: ic.rgba[1] / 255, b: ic.rgba[2] / 255 };
+    const icOklch = toOklch(icRgb);
+    let matched = false;
+
+    if (icOklch) {
+      for (const ec of mergedColors) {
+        const ecRgb = { mode: 'rgb' as const, r: ec.rgba[0] / 255, g: ec.rgba[1] / 255, b: ec.rgba[2] / 255 };
+        const ecOklch = toOklch(ecRgb);
+        if (ecOklch && deltaE(
+          { l: icOklch.l ?? 0, c: icOklch.c ?? 0, h: icOklch.h ?? 0 },
+          { l: ecOklch.l ?? 0, c: ecOklch.c ?? 0, h: ecOklch.h ?? 0 },
+        ) < 3) {
+          // Merge into existing
+          ec.frequency += ic.frequency;
+          for (const [ctx, count] of Object.entries(ic.usedAs)) {
+            (ec.usedAs as Record<string, number>)[ctx] = ((ec.usedAs as Record<string, number>)[ctx] ?? 0) + count;
+          }
+          for (const v of ic.cssVariableNames) {
+            if (!ec.cssVariableNames.includes(v)) ec.cssVariableNames.push(v);
+          }
+          matched = true;
+          break;
+        }
+      }
+    }
+    if (!matched) {
+      mergedColors.push({ ...ic });
+    }
+  }
+  mergedColors.sort((a, b) => b.frequency - a.frequency);
+
+  // ── Typography merge: key = family|size|weight ────────────────────────
+  const typoMap = new Map<string, TypographyLevel>();
+  for (const t of existing.typographyLevels) {
+    typoMap.set(`${t.fontFamily}|${t.fontSize}|${t.fontWeight}`, t);
+  }
+  for (const t of incoming.typographyLevels) {
+    const key = `${t.fontFamily}|${t.fontSize}|${t.fontWeight}`;
+    const ex = typoMap.get(key);
+    if (ex) {
+      ex.frequency += t.frequency;
+    } else {
+      typoMap.set(key, { ...t });
+    }
+  }
+  const mergedTypo = Array.from(typoMap.values()).sort((a, b) => {
+    const sizeA = parseFloat(a.fontSize);
+    const sizeB = parseFloat(b.fontSize);
+    return sizeB - sizeA;
+  });
+
+  // ── Shadow merge: exact value match ───────────────────────────────────
+  const shadowMap = new Map<string, ShadowToken>();
+  for (const s of existing.shadowTokens) shadowMap.set(s.value, s);
+  for (const s of incoming.shadowTokens) {
+    const ex = shadowMap.get(s.value);
+    if (ex) {
+      ex.frequency += s.frequency;
+    } else {
+      shadowMap.set(s.value, { ...s });
+    }
+  }
+  const mergedShadows = Array.from(shadowMap.values()).sort((a, b) => b.frequency - a.frequency);
+
+  // ── Radius merge: exact value match ───────────────────────────────────
+  const radiusMap = new Map<string, RadiusToken>();
+  for (const r of existing.radiusTokens) radiusMap.set(r.value, r);
+  for (const r of incoming.radiusTokens) {
+    const ex = radiusMap.get(r.value);
+    if (ex) {
+      ex.frequency += r.frequency;
+    } else {
+      radiusMap.set(r.value, { ...r });
+    }
+  }
+  const mergedRadius = Array.from(radiusMap.values()).sort((a, b) => b.frequency - a.frequency);
+
+  return {
+    ...incoming,
+    colorTokens: mergedColors,
+    typographyLevels: mergedTypo,
+    shadowTokens: mergedShadows,
+    radiusTokens: mergedRadius,
+    // Keep incoming's other fields (components, layout, etc.)
+    // as they represent the latest extraction
   };
 }

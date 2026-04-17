@@ -3,11 +3,14 @@ import type { CrawlResult, PageData } from './types';
 
 // ─── Options ─────────────────────────────────────────────────────────────────
 
+export type WaitStrategy = 'networkidle' | 'css' | `selector:${string}`;
+
 export interface CrawlOptions {
   maxPages: number;
   concurrency: number;
   extraUrls?: string[];
   verbose: boolean;
+  waitFor?: WaitStrategy;
 }
 
 const DEFAULT_OPTIONS: CrawlOptions = {
@@ -168,9 +171,40 @@ async function dismissCookieBanners(page: Page): Promise<void> {
 
 // ─── Page Loading ────────────────────────────────────────────────────────────
 
+/** Wait until CSS variables and stylesheets stabilize (for SPA/CSS-in-JS) */
+async function waitForCSSStable(page: Page, timeoutMs = 10_000): Promise<void> {
+  const pollMs = 500;
+  let prevCount = -1;
+  let stableCount = 0;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const count: number = await page.evaluate(() => {
+      const vars = getComputedStyle(document.documentElement);
+      let n = document.styleSheets.length;
+      // Count CSS custom properties as a stability signal
+      for (let i = 0; i < vars.length; i++) {
+        if (vars[i].startsWith('--')) n++;
+      }
+      return n;
+    }).catch(() => -1);
+
+    if (count === prevCount && count >= 0) {
+      stableCount++;
+      if (stableCount >= 2) return; // Stable for 2 consecutive polls
+    } else {
+      stableCount = 0;
+    }
+    prevCount = count;
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  // Timeout → continue anyway
+}
+
 async function loadPage(
   page: Page,
   url: string,
+  waitStrategy?: WaitStrategy,
 ): Promise<{ status: number | null; error: string | null }> {
   try {
     // Try networkidle first, fall back to domcontentloaded on timeout
@@ -201,7 +235,14 @@ async function loadPage(
     await page.evaluate(() => document.fonts.ready).catch(() => {});
 
     // Wait for CSS-in-JS hydration
-    await delay(2000);
+    if (waitStrategy === 'css') {
+      await waitForCSSStable(page);
+    } else if (waitStrategy?.startsWith('selector:')) {
+      const sel = waitStrategy.slice('selector:'.length);
+      await page.waitForSelector(sel, { timeout: 10_000 }).catch(() => {});
+    } else {
+      await delay(2000);
+    }
 
     // Dismiss cookie banners
     await dismissCookieBanners(page);
@@ -561,6 +602,7 @@ async function processPage(
   browser: Browser,
   url: string,
   verbose: boolean,
+  waitStrategy?: WaitStrategy,
 ): Promise<{ page: PageData | null; discoveredLinks: DiscoveredLink[]; error: string | null }> {
   const start = Date.now();
   log(verbose, `START ${url}`);
@@ -576,7 +618,7 @@ async function processPage(
 
   try {
     // Load page
-    const { status, error } = await loadPage(page, url);
+    const { status, error } = await loadPage(page, url, waitStrategy);
 
     if (error) {
       // Check for timeout specifically
@@ -589,7 +631,7 @@ async function processPage(
       if (status === 403 || status === 429) {
         log(verbose, `RETRY (${status}) ${url}`);
         await delay(3000);
-        const retry = await loadPage(page, url);
+        const retry = await loadPage(page, url, waitStrategy);
         if (retry.error || retry.status === 403 || retry.status === 429) {
           return {
             page: null,
@@ -705,7 +747,7 @@ export async function crawlPages(
         await semaphore.acquire();
         try {
           await enforceDomainDelay(url, lastRequestByDomain);
-          return processPage(browser, url, opts.verbose);
+          return processPage(browser, url, opts.verbose, opts.waitFor);
         } finally {
           semaphore.release();
         }

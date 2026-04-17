@@ -116,7 +116,7 @@ Check the `status` field. If `status` is `"success"` or `"partial"`, proceed. If
 | Anti-bot protection | 403/429 status, empty page | Re-run with `--delay 5000 --stealth` flags if available; if not, wait 30 seconds and retry |
 | Timeout | Script hangs or reports timeout | Re-run with `--timeout 60000` |
 | CAPTCHA | Screenshot shows CAPTCHA challenge | Inform the user: "The site requires CAPTCHA verification. Please complete it manually, then I can retry extraction." |
-| No CSS found | tokens.json has empty color/typography sections | The site may load styles dynamically; try adding `--wait-for-css 10000` |
+| No CSS found | tokens.json has empty color/typography sections | The site may load styles dynamically; try adding `--wait-for css` |
 | SSL error | Certificate validation failure | Try with `--ignore-ssl-errors` if the site is known-safe |
 
 If the extraction fails after two retries, inform the user with the specific error and suggest alternative approaches (providing a URL to a different page, or manual CSS inspection).
@@ -853,7 +853,7 @@ Between checkpoints, proceed autonomously. Do not ask for confirmation at every 
 | Dark mode incomplete | Some dark mode tokens missing | Document what is available. Add a note: "Dark mode extraction was partial. Values below represent observed overrides only." |
 | CAPTCHA | Screenshot shows challenge page | Inform user. Skip that page. Proceed with data from other pages. |
 | Proprietary fonts | Font files blocked or DRM-protected | Document the font family name and known fallbacks. Note in README that the font must be obtained separately. |
-| Dynamic styles | Styles loaded via JavaScript after render | Re-run extraction with longer `--wait-for-css` timeout. Some runtime-injected styles may not be capturable. |
+| Dynamic styles | Styles loaded via JavaScript after render | Re-run extraction with `--wait-for css` (polls until CSS variables stabilize). Some runtime-injected styles may not be capturable. |
 
 ---
 
