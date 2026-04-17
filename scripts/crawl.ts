@@ -15,7 +15,7 @@ export interface CrawlOptions {
 
 const DEFAULT_OPTIONS: CrawlOptions = {
   maxPages: 20,
-  concurrency: 10,
+  concurrency: 5,
   verbose: false,
 };
 
@@ -72,7 +72,7 @@ const COOKIE_SELECTORS = [
 
 // ─── Semaphore ───────────────────────────────────────────────────────────────
 
-export class Semaphore {
+class Semaphore {
   private queue: Array<() => void> = [];
   private active = 0;
 

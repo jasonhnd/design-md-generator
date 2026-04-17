@@ -12,14 +12,30 @@ function topColors(tokens: ColorToken[], n: number): ColorToken[] {
   return tokens.filter((c) => c.rgba[3] > 0.1).slice(0, n);
 }
 
+function luminance(r: number, g: number, b: number): number {
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
 function inferBackground(tokens: ColorToken[]): string {
-  const bg = tokens.find((c) => c.usedAs.bgColor > 0 && c.frequency > 10);
-  return bg?.hex ?? '#ffffff';
+  // Prefer the lightest color used as background
+  const bgCandidates = tokens
+    .filter((c) => c.usedAs.bgColor > 0 && c.frequency > 5)
+    .sort((a, b) => luminance(b.rgba[0], b.rgba[1], b.rgba[2]) - luminance(a.rgba[0], a.rgba[1], a.rgba[2]));
+  return bgCandidates[0]?.hex ?? '#ffffff';
 }
 
 function inferTextColor(tokens: ColorToken[]): string {
-  const text = tokens.find((c) => c.usedAs.textColor > 0 && c.frequency > 10);
-  return text?.hex ?? '#000000';
+  // Prefer the darkest color used as text
+  const textCandidates = tokens
+    .filter((c) => c.usedAs.textColor > 0 && c.frequency > 5)
+    .sort((a, b) => luminance(a.rgba[0], a.rgba[1], a.rgba[2]) - luminance(b.rgba[0], b.rgba[1], b.rgba[2]));
+  const bg = inferBackground(tokens);
+  const bgLum = (() => { const c = tokens.find((t) => t.hex === bg); return c ? luminance(c.rgba[0], c.rgba[1], c.rgba[2]) : 255; })();
+  // Ensure contrast: if bg is dark, pick lightest text; if bg is light, pick darkest
+  if (bgLum < 128) {
+    return textCandidates[textCandidates.length - 1]?.hex ?? '#ffffff';
+  }
+  return textCandidates[0]?.hex ?? '#000000';
 }
 
 function inferPrimary(tokens: ColorToken[]): string {

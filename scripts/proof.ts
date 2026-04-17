@@ -63,13 +63,28 @@ function scoreColorCoverage(
   palette: { l: number; c: number; h: number }[],
   threshold: number = 12,
   sampleCount: number = 2000,
+  excludeRects: { x: number; y: number; w: number; h: number }[] = [],
 ): SampleResult {
   const step = Math.max(1, Math.floor((width * height) / sampleCount));
   let matched = 0;
   let totalSampled = 0;
+  let skippedImage = 0;
   const unmatchedMap = new Map<string, { r: number; g: number; b: number; count: number }>();
 
   for (let i = 0; i < width * height; i += step) {
+    const px = i % width;
+    const py = Math.floor(i / width);
+
+    // Skip pixels inside image/media regions
+    let inExcluded = false;
+    for (const rect of excludeRects) {
+      if (px >= rect.x && px < rect.x + rect.w && py >= rect.y && py < rect.y + rect.h) {
+        inExcluded = true;
+        break;
+      }
+    }
+    if (inExcluded) { skippedImage++; continue; }
+
     const idx = i * 4;
     const r = pixels[idx], g = pixels[idx + 1], b = pixels[idx + 2], a = pixels[idx + 3];
     if (a < 128) continue; // skip transparent
@@ -146,7 +161,7 @@ function buildProofHtml(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fidelity Proof — ${esc(sourceUrl)}</title>
 <style>
-  :root { --bg: #0f0f13; --surface: #1a1a24; --text: #e4e4eb; --border: #2a2a3a; --muted: #8b8ba0; }
+  :root { --bg: #fafafa; --surface: #ffffff; --text: #1a1a2e; --border: #e5e7eb; --muted: #6b7280; }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); }
 
@@ -206,7 +221,7 @@ function buildProofHtml(
     <span class="score-num" style="color:${scoreColor(pct)}">${pctStr}%</span>
     <span class="score-sub">${scoreLabel(pct)}</span>
   </div>
-  <p style="color:var(--muted);font-size:0.85rem;">Color Palette Coverage — how well our extracted palette captures the original site's colors</p>
+  <p style="color:var(--muted);font-size:0.85rem;">Color Palette Coverage — CSS-rendered areas only (images and media excluded)</p>
 
   <div class="metric-row">
     <div class="metric">
@@ -292,8 +307,37 @@ async function runProof(
   const origScreenshot = await origPage.screenshot({ fullPage: false });
   const origB64 = origScreenshot.toString('base64');
 
+  // Collect <img>, <video>, <svg>, background-image bounding rects to exclude from sampling
+  console.log('  Collecting image regions to exclude...');
+  const imageRects: { x: number; y: number; w: number; h: number }[] = await origPage.evaluate(() => {
+    const rects: { x: number; y: number; w: number; h: number }[] = [];
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    // Exclude <img>, <video>, <picture>, <canvas>, <svg> elements
+    const mediaEls = document.querySelectorAll('img, video, picture, canvas, svg');
+    for (const el of mediaEls) {
+      const r = el.getBoundingClientRect();
+      if (r.width > 10 && r.height > 10 && r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw) {
+        rects.push({ x: Math.max(0, r.left), y: Math.max(0, r.top), w: Math.min(r.width, vw - r.left), h: Math.min(r.height, vh - r.top) });
+      }
+    }
+    // Also exclude elements with background-image
+    const allEls = document.querySelectorAll('*');
+    for (const el of allEls) {
+      const bg = getComputedStyle(el).backgroundImage;
+      if (bg && bg !== 'none' && (bg.includes('url(') || bg.includes('gradient'))) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 30 && r.height > 30 && r.bottom > 0 && r.top < vh) {
+          rects.push({ x: Math.max(0, r.left), y: Math.max(0, r.top), w: Math.min(r.width, vw - r.left), h: Math.min(r.height, vh - r.top) });
+        }
+      }
+    }
+    return rects;
+  });
+  console.log(`  Excluding ${imageRects.length} image/media regions`);
+
   // Extract pixel data from original screenshot
-  console.log('  Sampling pixels from original...');
+  console.log('  Sampling pixels from original (CSS-only areas)...');
   const pixelData = await origPage.evaluate(async (b64: string) => {
     const img = new Image();
     img.src = `data:image/png;base64,${b64}`;
@@ -331,14 +375,36 @@ async function runProof(
   await prevCtx.close();
   await browser.close();
 
-  // 3. Score
-  console.log('  Computing color coverage...');
+  // 3. Score (excluding image regions)
+  console.log('  Computing color coverage (CSS-only)...');
   const pixels = new Uint8Array(pixelData.data);
-  const result = scoreColorCoverage(pixels, pixelData.width, pixelData.height, palette);
+  // Device pixel ratio: screenshot pixels may differ from CSS pixels
+  const dpr = pixelData.width / 1440;
+  const scaledRects = imageRects.map((r) => ({
+    x: Math.floor(r.x * dpr),
+    y: Math.floor(r.y * dpr),
+    w: Math.ceil(r.w * dpr),
+    h: Math.ceil(r.h * dpr),
+  }));
+  const result = scoreColorCoverage(pixels, pixelData.width, pixelData.height, palette, 12, 2000, scaledRects);
   const pct = (result.coverage * 100).toFixed(1);
   console.log(`  Coverage: ${pct}% (${result.matched}/${result.totalSampled} pixels within ΔE < 12)`);
 
-  // 4. Generate proof report
+  // 4. Save proof data for report-gen to embed
+  const proofData = {
+    sourceUrl: url,
+    coverage: result.coverage,
+    totalSampled: result.totalSampled,
+    matched: result.matched,
+    unmatchedColors: result.unmatchedColors,
+    originalScreenshot: origB64,
+    previewScreenshot: prevB64,
+    excludedRegions: imageRects.length,
+  };
+  fs.writeFileSync(path.join(outputDir, 'proof-data.json'), JSON.stringify(proofData));
+  console.log(`  Saved proof-data.json`);
+
+  // 5. Generate standalone proof report (kept for backwards compat)
   const html = buildProofHtml(url, origB64, prevB64, result, tokens);
   const outPath = path.join(outputDir, 'proof.html');
   fs.writeFileSync(outPath, html);

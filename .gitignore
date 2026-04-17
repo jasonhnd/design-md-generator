@@ -2,9 +2,5 @@ output/
 node_modules/
 dist/
 *.png
-*.map
 raw-data.json
 .DS_Store
-.env
-.env.*
-.env.*.local

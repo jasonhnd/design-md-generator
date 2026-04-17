@@ -1,11 +1,26 @@
 {
-  "name": "design-md-generator",
-  "version": "0.0.2",
-  "description": "Generate publication-quality DESIGN.md files from any website URL",
-  "bin": {
-    "design-md-gen": "./scripts/cli.ts"
+  "name": "design-md-gen",
+  "version": "0.0.3",
+  "description": "Extract design systems from any website. AI-readable DESIGN.md with pixel-verified accuracy.",
+  "keywords": ["design-system", "design-md", "design-tokens", "stitch", "ai-agent", "css-extraction", "playwright"],
+  "author": "Jason <jason@example.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jasonhnd/design-md-generator"
   },
+  "bin": {
+    "design-md-gen": "./dist/cli.js"
+  },
+  "files": [
+    "dist/",
+    "resources/",
+    "SKILL.md",
+    "README.md"
+  ],
   "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build && npm test",
     "extract": "ts-node scripts/extract.ts",
     "validate": "ts-node scripts/validate.ts",
     "preview": "ts-node scripts/preview-gen.ts",
