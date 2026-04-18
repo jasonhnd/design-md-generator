@@ -60,6 +60,18 @@ If `ts-node` is not found, install it: `npm install -D ts-node typescript`.
 
 ---
 
+## Execution Mode
+
+**FULL AUTO.** When this skill is invoked, execute Steps 1-21 without stopping for user confirmation. The only reasons to pause are:
+
+1. Extraction fails after 2 retries → inform user with error
+2. CAPTCHA detected → inform user to complete manually
+3. Fatal error with no recovery path
+
+Do NOT ask "should I proceed?" between steps. Do NOT present intermediate results. Run the entire pipeline and present the final output at the end.
+
+---
+
 ## Step 1: Run Extraction
 
 **Command:**
@@ -775,48 +787,65 @@ Create a README.md in the output directory with:
 
 ## Step 21: Final Output
 
-Confirm all required files are present in `output/<domain>/`:
+**Auto-generate all deliverables:**
+
+```bash
+# Preview
+cd /path/to/dmdg && npx ts-node scripts/preview-gen.ts output/<domain>/tokens.json output/<domain>/
+
+# Report (includes validation + proof data if available)
+cd /path/to/dmdg && npx ts-node scripts/report-gen.ts output/<domain>/tokens.json output/<domain>/ output/<domain>/DESIGN.md
+
+# Fidelity proof (captures live site, compares pixel-level)
+cd /path/to/dmdg && npx ts-node scripts/proof.ts <URL> output/<domain>/tokens.json output/<domain>/
+
+# Re-generate report with proof data embedded
+cd /path/to/dmdg && npx ts-node scripts/report-gen.ts output/<domain>/tokens.json output/<domain>/ output/<domain>/DESIGN.md
+```
+
+**Then open the report for the user:**
+
+```bash
+open output/<domain>/report.html
+```
+
+Confirm all files are present:
 
 | File | Required | Description |
 |------|----------|-------------|
 | `DESIGN.md` | Yes | The complete design system document |
-| `README.md` | Yes | Usage instructions and metadata |
-| `preview.html` | Yes | Visual demonstration of all tokens |
-| `preview-dark.html` | If dark mode | Dark mode visual demonstration |
-| `tokens.json` | Yes (from extraction) | Raw extracted data |
-| `extraction-report.json` | Yes (from extraction) | Extraction metadata |
-| `screenshots/` | Yes (from extraction) | Site screenshots |
+| `tokens.json` | Yes | Extracted design tokens |
+| `report.html` | Yes | Quality report + fidelity proof + DESIGN.md viewer |
+| `preview.html` | Yes | Visual token preview |
+| `screenshots/` | Yes | Site screenshots at 5 viewports |
 
 Display a summary to the user:
 
 ```
-Generation complete for [SiteName].
+✅ Generation complete for [SiteName].
 
-Files:
-- DESIGN.md (X lines, Y colors, Z typography levels)
-- preview.html
-- README.md
+Quality: [score]/100 | Fidelity: [coverage]%
+Colors: [N] | Typography: [N] levels | Components: [N] types
 
 Key characteristics:
 - [2-3 most distinctive design traits]
 
-Output directory: output/<domain>/
+📄 report.html opened in browser.
+📋 DESIGN.md ready — copy from report or use directly.
 ```
 
 ---
 
 ## User Interaction Points
 
-The following steps require user input before proceeding. Do not skip these checkpoints.
+**Default: NONE.** Run Steps 1-21 autonomously without stopping.
 
-| Step | Checkpoint | What to Ask |
-|------|-----------|-------------|
-| Step 2 | Output structure | Confirm boundary detection and output structure (unified vs multi-file) |
-| Step 3 | Data quality | Confirm extracted data seems sufficient, or provide additional URLs |
-| After Step 16 | Audit results | Show any quality gate failures and proposed fixes |
-| Step 21 | Final confirmation | Confirm output is satisfactory |
+Only pause if:
+- Extraction fails after 2 retries (Step 1)
+- CAPTCHA blocks access (Step 1)
+- Validation score < 60 (Step 17) — show failures, auto-fix, re-validate
 
-Between checkpoints, proceed autonomously. Do not ask for confirmation at every section -- that slows the process. Generate sections 1-9, audit, and then present results.
+Do NOT ask "should I continue?" between sections. Do NOT show intermediate tokens.json contents. The user wants the finished DESIGN.md, not a play-by-play.
 
 ---
 

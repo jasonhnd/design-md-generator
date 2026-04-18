@@ -2,57 +2,46 @@
 
 You have access to a design system extraction tool. When the user asks you to match a website's visual style, build UI that looks like a specific site, or create a DESIGN.md:
 
-## Quick Start
+**Run the full pipeline without stopping.** Do not ask "should I proceed?" between steps.
+
+## Full Pipeline (one command flow)
 
 ```bash
-# Extract design tokens from any website
-npx design-md-gen https://example.com
+# 1. Extract design tokens
+cd /path/to/dmdg && npx ts-node scripts/extract.ts <URL>
 
-# Output appears in output/<domain>/tokens.json
+# 2. [YOU] Read tokens.json + screenshots, write DESIGN.md following SKILL.md spec
+#    Write all 9 sections without pausing. Self-audit. Fix issues.
+
+# 3. Validate
+cd /path/to/dmdg && npx ts-node scripts/validate.ts output/<domain>/DESIGN.md output/<domain>/tokens.json
+
+# 4. Generate report + proof
+cd /path/to/dmdg && npx ts-node scripts/preview-gen.ts output/<domain>/tokens.json output/<domain>/
+cd /path/to/dmdg && npx ts-node scripts/proof.ts <URL> output/<domain>/tokens.json output/<domain>/
+cd /path/to/dmdg && npx ts-node scripts/report-gen.ts output/<domain>/tokens.json output/<domain>/ output/<domain>/DESIGN.md
+
+# 5. Open report for user
+open output/<domain>/report.html
 ```
 
 ## Using an Existing DESIGN.md
 
-If the user has a DESIGN.md file in the project root or provides one:
+If a DESIGN.md already exists in the project:
 
-1. Read the DESIGN.md file completely before writing any UI code
-2. Use ONLY the colors, fonts, sizes, and shadows specified in the DESIGN.md
-3. Do NOT invent colors or typography not present in the document
-4. Follow the "Agent Prompt Guide" (Section 9) for quick reference values
-5. Match interaction states (hover, focus, active) as documented in Section 4
-
-## Generating a New DESIGN.md
-
-If no DESIGN.md exists and the user wants to match a site's style:
-
-1. Run `npx design-md-gen <url>` to extract design tokens
-2. Read the generated `tokens.json` from the output directory
-3. Use the extraction data to write a DESIGN.md following this 9-section format:
-   - 1. Visual Theme & Atmosphere
-   - 2. Color Palette & Roles
-   - 3. Typography Rules
-   - 4. Component Stylings
-   - 5. Layout Principles
-   - 6. Depth & Elevation
-   - 7. Do's and Don'ts
-   - 8. Responsive Behavior
-   - 9. Agent Prompt Guide
+1. Read it completely before writing any UI code
+2. Use ONLY the colors, fonts, sizes, and shadows specified in it
+3. Do NOT invent values not present in the document
+4. Follow Section 9 (Agent Prompt Guide) for quick reference
 
 ## Critical Rules
 
-- ALL numerical values (hex colors, font sizes, weights, shadows) MUST come from the extraction data or DESIGN.md — never hallucinate
-- Use 6-digit lowercase hex format (#ffffff, not #FFF or #FFFFFF)
-- Use numeric font weights (400, 700) not words (regular, bold)
-- When the DESIGN.md specifies a custom font, check if it's available; fall back to the documented fallback stack if not
-
-## Verification
-
-After generating UI, verify against the DESIGN.md:
-- Every hex color used should appear in Section 2
-- Every font-size/weight combination should appear in Section 3
-- Shadow values should match Section 6
-- Spacing should follow Section 5's scale
+- ALL numerical values MUST come from tokens.json — never hallucinate
+- 6-digit lowercase hex (#ffffff, not #FFF)
+- Numeric font weights (400, 700) not words (bold)
+- Do not stop between steps to ask for confirmation
+- Present only the final result
 
 ## Full Specification
 
-See SKILL.md for the complete 21-step extraction and generation workflow, format specification, writing style guide, and quality checklist.
+See SKILL.md for the complete 21-step workflow, format spec, writing style guide, and quality checklist.
