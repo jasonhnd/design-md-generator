@@ -14,7 +14,7 @@ export interface CrawlOptions {
 }
 
 const DEFAULT_OPTIONS: CrawlOptions = {
-  maxPages: 20,
+  maxPages: 8,
   concurrency: 5,
   verbose: false,
 };
@@ -36,7 +36,7 @@ const MAX_SCROLL_HEIGHT = 15_000;
 const SCROLL_STEP_RATIO = 0.8;
 const SCROLL_PAUSE_MS = 500;
 const NAV_TIMEOUT = 60_000;
-const SAME_DOMAIN_DELAY_MS = 500;
+const SAME_DOMAIN_DELAY_MS = 300;
 const MAX_MODALS = 2;
 
 const RESOURCE_EXTENSIONS = new Set([
@@ -241,7 +241,7 @@ async function loadPage(
       const sel = waitStrategy.slice('selector:'.length);
       await page.waitForSelector(sel, { timeout: 10_000 }).catch(() => {});
     } else {
-      await delay(2000);
+      await delay(1000);
     }
 
     // Dismiss cookie banners

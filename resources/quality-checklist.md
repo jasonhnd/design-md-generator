@@ -271,3 +271,147 @@ Use this checklist to validate every generated design system document before del
   - Check: Count total lines (including blank lines)
   - Fail reason: Document is either too sparse (<250 lines, missing detail) or too verbose (>400 lines, redundant content)
   - Fix: If under 250, add missing sections or detail; if over 400, consolidate redundant descriptions and tighten prose
+
+---
+
+## 6. Brand Context
+
+- [ ] **[BC-01]** Company or product identity is stated in the opening
+  - Check: The first paragraph names the company/product and positions the design system within its brand context
+  - Fail reason: LLM treated the design system as a generic artifact without identifying who it belongs to
+  - Fix: State the company name and one sentence about its market position or product category
+
+- [ ] **[BC-02]** Target audience is stated or inferable
+  - Check: The document indicates who the design system serves (developers, enterprise users, consumers, creative professionals)
+  - Fail reason: LLM described visual properties without connecting them to the audience they are designed for
+  - Fix: Add an audience signal in the atmosphere section or key characteristics: "designed for [audience], reflected in [specific choice]"
+
+- [ ] **[BC-03]** Personality adjectives are grounded in evidence
+  - Check: Every personality descriptor (e.g., "confident", "restrained", "warm") is followed by a specific value or technique that justifies it
+  - Fail reason: LLM used personality words as decoration rather than derived observations
+  - Fix: Each personality claim needs a proof: "restrained -- only 3 chromatic colors in the entire palette" not just "restrained design"
+
+- [ ] **[BC-04]** Data sources are listed or referenced
+  - Check: The document states where its data comes from (tokens.json, extracted CSS, Figma export, live site analysis)
+  - Fail reason: LLM produced values without provenance, making accuracy unverifiable
+  - Fix: Add a brief "Source" note at the top or bottom: "Extracted from [URL] on [date] using [tool]"
+
+---
+
+## 7. Content & Voice
+
+- [ ] **[CV-01]** Tone is defined with specific adjectives
+  - Check: A Content & Voice or Brand Voice section exists with 2-4 tone adjectives backed by evidence from UI text
+  - Fail reason: LLM skipped content voice because it focused only on visual properties
+  - Fix: Analyze extracted button labels, headings, error messages, and microcopy; derive tone adjectives from observed patterns
+
+- [ ] **[CV-02]** Casing convention is documented
+  - Check: Button text, heading, and label casing rules are explicitly stated (Title Case, sentence case, ALL CAPS)
+  - Fail reason: LLM documented typography sizing but ignored casing conventions
+  - Fix: Survey all extracted button and heading text; identify the dominant casing pattern and document it
+
+- [ ] **[CV-03]** Button text patterns are documented
+  - Check: Common button text patterns are listed with examples (e.g., "verb + noun: 'Create project', 'Send message'")
+  - Fail reason: LLM documented button styling but not button content conventions
+  - Fix: Extract 5+ button labels from the source; identify the pattern (verb-first, noun-first, single-word, etc.)
+
+- [ ] **[CV-04]** Error message template exists
+  - Check: At least one error message template is documented with structure guidance (e.g., "[What happened] + [What to do]")
+  - Fail reason: LLM treated error states as visual-only (red border) without documenting error copy patterns
+  - Fix: If extracted data contains error text, document the template; if not, note "Error message pattern not observed in source"
+
+- [ ] **[CV-05]** Voice examples use real extracted text
+  - Check: At least 3 voice examples are direct quotes from the extracted UI text, not invented
+  - Fail reason: LLM fabricated example copy instead of using actual observed text
+  - Fix: Pull real button labels, headings, and microcopy from the extraction output and quote them verbatim
+
+- [ ] **[CV-06]** Emoji policy is stated
+  - Check: The document explicitly states whether emoji are used in the UI, and if so, where and how
+  - Fail reason: LLM did not examine text content for emoji presence/absence
+  - Fix: Search extracted text for emoji characters; state "Emoji: none observed" or "Emoji: used in [context]"
+
+---
+
+## 8. Accessibility Contract
+
+- [ ] **[AC-01]** WCAG conformance level is stated
+  - Check: The document specifies a target WCAG level (AA or AAA) or notes the observed conformance level
+  - Fail reason: LLM documented colors without connecting them to accessibility standards
+  - Fix: State the target level; if unknown, default to "WCAG 2.1 AA minimum" and verify key color pairs meet it
+
+- [ ] **[AC-02]** Contrast ratios are documented for primary text/background pairs
+  - Check: At least the text-primary/background and text-secondary/background pairs have calculated contrast ratios
+  - Fail reason: LLM listed hex values without computing whether they meet WCAG requirements
+  - Fix: Calculate contrast ratios for all text/background pairs; flag any below 4.5:1 (AA normal text) or 3:1 (AA large text)
+
+- [ ] **[AC-03]** Focus indicator specification exists
+  - Check: A focus ring or focus indicator is documented with color, width, offset, and style
+  - Fail reason: LLM documented interactive states but omitted keyboard focus indicators
+  - Fix: Extract focus styles from `:focus-visible` or `:focus` pseudo-class; document the ring color, width, and offset
+
+- [ ] **[AC-04]** Touch target minimums are stated
+  - Check: Interactive element minimum sizes are documented (typically 44x44px for WCAG, 48x48px for mobile)
+  - Fail reason: LLM documented button padding without computing whether the resulting target meets minimum size
+  - Fix: Calculate minimum clickable area from padding + content; state the minimum and verify it meets 44x44px
+
+- [ ] **[AC-05]** Reduced motion strategy is documented
+  - Check: The document states how animations behave under `prefers-reduced-motion: reduce`
+  - Fail reason: LLM documented animations and transitions without addressing motion sensitivity
+  - Fix: Add a note for each transition/animation: "Respects `prefers-reduced-motion`: [disables / reduces duration / replaces with opacity fade]"
+
+---
+
+## 9. State Matrix
+
+- [ ] **[SM-01]** Loading states are documented for data-dependent components
+  - Check: Components that display dynamic data (cards, tables, lists) have loading/skeleton state documentation
+  - Fail reason: LLM only documented the data-present "happy path" state
+  - Fix: Add skeleton/shimmer specs: background color, animation, placeholder dimensions for each component
+
+- [ ] **[SM-02]** Empty states are documented for collection components
+  - Check: Components that can be empty (tables, lists, search results) have empty state documentation
+  - Fail reason: LLM assumed all components always have content
+  - Fix: Document empty state: illustration (if any), heading, body text, CTA, and layout
+
+- [ ] **[SM-03]** Error states are documented for fallible components
+  - Check: Components that can fail (forms, data loaders, API-driven content) have error state documentation
+  - Fail reason: LLM documented the success state but not the failure state
+  - Fix: Document error state: border color change, error text color, icon, inline message placement
+
+---
+
+## 10. Iconography
+
+- [ ] **[IC-01]** Icon system is identified
+  - Check: The document states which icon library is used (Lucide, Heroicons, Material Symbols, custom SVG, etc.)
+  - Fail reason: LLM documented components with icon references ("with icon") but never identified the icon system
+  - Fix: Detect icon library from class names, SVG structure, or import paths; state the library name and version
+
+- [ ] **[IC-02]** Icon sizing scale is documented
+  - Check: Icon sizes are listed as a scale (e.g., 16px, 20px, 24px) with usage context
+  - Fail reason: LLM used icons in component docs at various sizes without consolidating a scale
+  - Fix: Extract all observed icon sizes; present as a scale with context: "16px: inline with body text, 20px: buttons, 24px: navigation"
+
+- [ ] **[IC-03]** Icon alignment rules are documented
+  - Check: Icon alignment relative to text is specified (optical center, baseline, flex center)
+  - Fail reason: LLM placed icons in component specs without stating alignment
+  - Fix: Note the alignment method and any optical adjustment: "Icons vertically centered with `align-items: center`; 1px optical lift on 16px icons"
+
+---
+
+## 11. Frequency Data
+
+- [ ] **[FQ-01]** Color usage frequencies are present
+  - Check: The color palette includes frequency or prevalence data (percentage, rank, or tier like "dominant/common/rare")
+  - Fail reason: LLM listed colors as equals without indicating which ones dominate the system
+  - Fix: Add frequency tier to each color: "dominant (62% of text)", "rare (3% of elements, 100% interactive)"
+
+- [ ] **[FQ-02]** Shadow usage frequencies are present
+  - Check: The shadow/elevation table includes frequency data indicating which shadow level is most common
+  - Fail reason: LLM presented shadows as an equal-weight scale without indicating which level appears most
+  - Fix: Add occurrence count or frequency tier: "shadow-border: 47 occurrences, elevation-1: 12, elevation-2: 3"
+
+- [ ] **[FQ-03]** Border-radius usage frequencies are present
+  - Check: The radius scale includes frequency data showing the dominant radius value
+  - Fail reason: LLM listed radius values without indicating which one is the system default
+  - Fix: Add frequency: "6px (78% of rounded elements), 9999px (pill, 15%), 12px (cards, 7%)"

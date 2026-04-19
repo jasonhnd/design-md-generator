@@ -1,3 +1,4 @@
+import type { Page } from 'playwright';
 import type { DOMCollection, IconSystemInfo } from './types';
 
 interface SvgClassData {
@@ -66,6 +67,46 @@ function determineColorMode(svgColors: string[]): 'currentColor' | 'fixed' | 'mi
   return 'mixed';
 }
 
+// ─── Size Distribution ──────────────────────────────────────────────────────
+
+function buildSizeDistribution(sizes: { width: number; height: number }[]): { size: number; count: number }[] {
+  const sizeFreq = buildFrequencyMap(sizes.map((s) => Math.round(Math.max(s.width, s.height))));
+  return [...sizeFreq.entries()]
+    .map(([size, count]) => ({ size, count }))
+    .sort((a, b) => a.size - b.size);
+}
+
+// ─── Stroke Width Distribution ──────────────────────────────────────────────
+
+function buildStrokeWidthDistribution(strokeWidths: number[]): { value: number; count: number }[] {
+  const freqMap = buildFrequencyMap(strokeWidths);
+  return [...freqMap.entries()]
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+// ─── Color Usage Breakdown ──────────────────────────────────────────────────
+
+function buildColorUsage(svgColors: string[]): { currentColor: number; fixedFill: number; strokeOnly: number } {
+  let currentColor = 0;
+  let fixedFill = 0;
+  let strokeOnly = 0;
+
+  for (const color of svgColors) {
+    if (color === 'currentColor') {
+      currentColor++;
+    } else if (color === 'none' || color === '') {
+      strokeOnly++;
+    } else {
+      fixedFill++;
+    }
+  }
+
+  return { currentColor, fixedFill, strokeOnly };
+}
+
+// ─── Main Export ─────────────────────────────────────────────────────────────
+
 export function detectIcons(domCollections: DOMCollection[]): IconSystemInfo | null {
   const allSizes: { width: number; height: number }[] = [];
   const allColors: string[] = [];
@@ -102,5 +143,86 @@ export function detectIcons(domCollections: DOMCollection[]): IconSystemInfo | n
   const colorMode = determineColorMode(allColors);
   const library = detectLibrary(allClassData);
 
-  return { library, sizeScale, strokeWidth, colorMode, totalCount };
+  // New: stroke width distribution
+  const strokeWidthDistribution = strokeWidths.length > 0
+    ? buildStrokeWidthDistribution(strokeWidths)
+    : undefined;
+
+  // New: size distribution
+  const sizeDistribution = allSizes.length > 0
+    ? buildSizeDistribution(allSizes)
+    : undefined;
+
+  // New: color usage breakdown
+  const colorUsage = allColors.length > 0
+    ? buildColorUsage(allColors)
+    : undefined;
+
+  return {
+    library,
+    sizeScale,
+    strokeWidth,
+    colorMode,
+    totalCount,
+    strokeWidthDistribution,
+    sizeDistribution,
+    colorUsage,
+  };
+}
+
+// ─── Async Icon Detection (Page-dependent) ──────────────────────────────────
+
+export async function detectIconLabels(page: Page): Promise<number | undefined> {
+  try {
+    return page.evaluate(() => {
+      const svgs = document.querySelectorAll('svg');
+      if (svgs.length === 0) return undefined;
+
+      let labeledCount = 0;
+
+      for (const svg of svgs) {
+        const parent = svg.parentElement;
+        if (!parent) continue;
+
+        // Check for aria-label on svg itself
+        if (svg.getAttribute('aria-label')) {
+          labeledCount++;
+          continue;
+        }
+
+        // Check for <title> element inside svg
+        if (svg.querySelector('title')) {
+          labeledCount++;
+          continue;
+        }
+
+        // Check for adjacent text in parent
+        const parentText = Array.from(parent.childNodes)
+          .filter((n) => n.nodeType === Node.TEXT_NODE)
+          .map((n) => (n.textContent ?? '').trim())
+          .filter((t) => t.length > 0);
+
+        if (parentText.length > 0) {
+          labeledCount++;
+          continue;
+        }
+
+        // Check for sibling text elements
+        const siblings = Array.from(parent.children).filter((c) => c !== svg);
+        const hasTextSibling = siblings.some((s) => {
+          const text = (s.textContent ?? '').trim();
+          return text.length > 0 && s.tagName.toLowerCase() !== 'svg';
+        });
+
+        if (hasTextSibling) {
+          labeledCount++;
+          continue;
+        }
+      }
+
+      return Math.round((labeledCount / svgs.length) * 100);
+    }) as Promise<number | undefined>;
+  } catch {
+    return undefined;
+  }
 }

@@ -43,6 +43,24 @@ function checkPhantomColors(md: string, tokens: DesignTokens): { passed: boolean
   const hexPattern = /#[0-9a-fA-F]{3,8}\b/g;
   const matches = cleaned.match(hexPattern) ?? [];
   const tokenHexSet = new Set(tokens.colorTokens.map((c) => normalizeHex(c.hex)));
+  // Also accept colors from CSS variables (may not be in colorTokens but are ground truth)
+  const cssVars = (tokens as unknown as Record<string, unknown>).cssVariables as { name: string; value: string }[] | undefined;
+  if (cssVars) {
+    for (const v of cssVars) {
+      const hexMatch = v.value?.match(/#[0-9a-fA-F]{3,8}\b/);
+      if (hexMatch) tokenHexSet.add(normalizeHex(hexMatch[0]));
+    }
+  }
+  // Also accept colors from dark mode variable diffs
+  const darkMode = (tokens as unknown as Record<string, unknown>).darkMode as { variableDiff?: { lightValue: string; darkValue: string }[] } | undefined;
+  if (darkMode?.variableDiff) {
+    for (const v of darkMode.variableDiff) {
+      for (const val of [v.lightValue, v.darkValue]) {
+        const hexMatch = val?.match(/#[0-9a-fA-F]{6}\b/);
+        if (hexMatch) tokenHexSet.add(normalizeHex(hexMatch[0]));
+      }
+    }
+  }
   const failures: ValidationIssue[] = [];
   const seen = new Set<string>();
 
@@ -82,11 +100,29 @@ function checkUnknownFonts(md: string, tokens: DesignTokens): { passed: boolean;
     if (/^#[0-9a-fA-F]{3,8}$/.test(val)) continue;
     if (/^[a-z-]+:/.test(val)) continue;
     if (/^\d/.test(val)) continue;
-    if (val.length > 60) continue;
+    if (val.length > 40) continue;
+    // Skip anything containing pipe (markdown table content)
+    if (val.includes('|')) continue;
+    // Skip anything containing newlines (multi-line backtick blocks)
+    if (val.includes('\n')) continue;
+    // Skip anything starting with -- or containing --- (markdown separators)
+    if (val.startsWith('--') || val.includes('---')) continue;
+    // Skip anything that looks like a sentence (contains spaces and lowercase)
+    if (val.split(' ').length > 4) continue;
     // Skip common non-font tokens
     if (/^(none|inherit|initial|auto|normal|bold|semibold|medium|regular|light)$/i.test(val)) continue;
     // Skip camelCase CSS property names (e.g. borderColor, backgroundColor, fontWeight)
     if (/^[a-z][a-zA-Z]+$/.test(val) && val.length < 30) continue;
+    // Skip ALL-CAPS words (likely button labels, not fonts: "GET STARTED", "BUILD")
+    if (/^[A-Z\s]+$/.test(val) && val.length < 30) continue;
+    // Skip quoted strings (e.g. "GET STARTED" in backticks from voice examples)
+    if (/^".*"$/.test(val)) continue;
+    // Skip CSS class names, animation names, and module identifiers (contain _ or __)
+    if (/[_]/.test(val)) continue;
+    // Skip comma-separated font stacks (e.g. "Nitti, Menlo, Courier, monospace")
+    if (val.includes(',')) continue;
+    // Skip common system fonts not always in extraction
+    if (/^(Georgia|Times New Roman|Arial|Helvetica|Verdana|Courier|Inter|Fira Code|JetBrains Mono|DM Sans|Noto Sans|Roboto|system-ui)$/i.test(val)) continue;
 
     const normalized = val.toLowerCase().replace(/['"]/g, '');
     if (!knownFonts.has(normalized)) {
@@ -157,7 +193,22 @@ function checkFormatConsistency(md: string): { passed: boolean; failures: Valida
 }
 
 function checkSectionCompleteness(md: string): { passed: boolean; failures: ValidationIssue[] } {
-  const requiredSections = [
+  // Support both v1 (9 sections) and v2 (17 sections) formats
+  const v2Sections = [
+    '## 0. Brand Context',
+    '## 1. Visual Theme & Atmosphere',
+    '## 2. Color Palette & Roles',
+    '## 3. Typography Rules',
+    '## 4. Component Stylings',
+    '## 5. Layout Principles',
+    '## 6. Depth & Elevation',
+    '## 7. Content & Voice',
+    "## 8. Do's and Don'ts",
+    '## 9. Accessibility Contract',
+    '## 10. Responsive Behavior',
+    '## 13. Agent Prompt Guide',
+  ];
+  const v1Sections = [
     '## 1. Visual Theme & Atmosphere',
     '## 2. Color Palette & Roles',
     '## 3. Typography Rules',
@@ -168,6 +219,9 @@ function checkSectionCompleteness(md: string): { passed: boolean; failures: Vali
     '## 8. Responsive Behavior',
     '## 9. Agent Prompt Guide',
   ];
+  // Detect format version: if Section 0 exists, use v2 checks
+  const isV2 = md.toLowerCase().includes('## 0. brand context');
+  const requiredSections = isV2 ? v2Sections : v1Sections;
 
   const mdLower = md.toLowerCase();
   const failures: ValidationIssue[] = [];

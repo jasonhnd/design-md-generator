@@ -324,3 +324,133 @@ Before finalizing component documentation:
 - [ ] Colors reference the semantic role names from the color taxonomy
 - [ ] Typography references the type scale defined elsewhere in the design system
 - [ ] Distinctive components are named and documented with full specification
+
+---
+
+## "Use:" Line Requirement
+
+Every component entry in the DESIGN.md must include a **Use:** line that answers: "When does a developer reach for this component instead of another?"
+
+### Format
+
+```
+Component — Variant
+Use: [1-2 sentence description of when to use this component]
+[... rest of spec ...]
+```
+
+### Examples
+
+```
+Button — Primary
+Use: For the single most important action on a page or in a dialog. Limit to one primary button per visible viewport.
+Background: #2563EB | Hover: #1D4ED8 | Active: #1E40AF
+...
+```
+
+```
+Toast — Error
+Use: For transient errors that do not block the user's workflow (failed background save, network hiccup). For blocking errors, use Dialog — Error instead.
+Background: #FFFFFF | Left border: 4px solid #EF4444
+...
+```
+
+```
+Badge — Status
+Use: For displaying the current state of an entity (order status, deployment status, user online/offline). Not for counts -- use Badge — Count for numeric indicators.
+Background: varies by status | Text: varies, 12px, weight 600
+...
+```
+
+### Why the "Use:" line matters
+
+Without it, developers choose components by visual similarity ("this looks like a card") rather than semantic purpose. The "Use:" line prevents:
+- Modals used where toasts should appear
+- Cards used where list items belong
+- Buttons used where links are semantically correct
+- Badges used where tooltips are more appropriate
+
+---
+
+## State Matrix Template
+
+Every interactive or data-dependent component must document its states beyond the default. Use this template:
+
+### State matrix format
+
+```markdown
+### Component — Variant
+
+| State | Visual changes | Trigger |
+|---|---|---|
+| Default | [base appearance] | Initial render |
+| Hover | [what changes on hover] | Mouse enter |
+| Active/Pressed | [what changes on press] | Mouse down / touch |
+| Focus | [focus ring spec] | Tab / keyboard navigation |
+| Disabled | [opacity, cursor, color changes] | `disabled` attribute |
+| Loading | [spinner, skeleton, shimmer] | Async operation in progress |
+| Empty | [empty state illustration, text, CTA] | No data / first use |
+| Error | [error border, message, icon] | Validation failure / API error |
+| Success | [confirmation indicator] | Successful completion |
+```
+
+### Which states apply to which components
+
+| Component | Hover | Active | Focus | Disabled | Loading | Empty | Error | Success |
+|---|---|---|---|---|---|---|---|---|
+| Button | required | required | required | required | optional | -- | -- | optional |
+| Input | required | -- | required | required | -- | -- | required | optional |
+| Card | if interactive | if interactive | if interactive | optional | required | -- | optional | -- |
+| Table | row hover | row select | cell focus | -- | required | required | required | -- |
+| Select | required | -- | required | required | -- | required | required | -- |
+| Toast | pause timer | -- | -- | -- | -- | -- | -- | -- |
+| Modal | -- | -- | focus trap | -- | optional | -- | -- | -- |
+| Dropdown | item hover | item select | item focus | item disabled | -- | required | -- | -- |
+
+### Documenting states you did NOT observe
+
+If the extraction data lacks a state that should exist, document the gap explicitly:
+
+```
+Focus: not observed in extraction — implement with 2px ring matching primary color, 2px offset
+Error: not observed — apply border-color change to destructive color (#EF4444)
+```
+
+This is better than silent omission, which causes implementers to invent states that may conflict with the system.
+
+---
+
+## Decision Logic: When to Use Which Component
+
+Some components serve overlapping purposes. This decision logic helps the DESIGN.md document the right component for each communication need.
+
+### Feedback to the user: Dialog vs Toast vs Banner
+
+| Question | Dialog (Modal) | Toast (Snackbar) | Banner (Inline) |
+|---|---|---|---|
+| Does it need user action? | Yes -- confirm, choose, input | No -- informational only | Sometimes -- dismissible with optional CTA |
+| Is it blocking? | Yes -- interrupts workflow | No -- appears and auto-dismisses | No -- persistent but non-blocking |
+| Is it contextual to a specific element? | No -- full-page overlay | No -- viewport-anchored | Yes -- appears near the relevant content |
+| Can the user miss it? | No -- requires dismissal | Yes -- may auto-dismiss before read | Unlikely -- persists until dismissed |
+| Examples | "Delete this project?", payment confirmation | "Changes saved", "Link copied" | "Your trial expires in 3 days", form-level error |
+
+### Content display: Card vs List Item vs Table Row
+
+| Question | Card | List Item | Table Row |
+|---|---|---|---|
+| Is the content visually rich (images, stats)? | Yes | Minimal | No |
+| Are items being compared? | Poorly suited | Poorly suited | Yes |
+| Is the collection scannable? | At ~4-8 items | At ~5-20 items | At ~10-100+ items |
+| Does each item need its own visual container? | Yes | No | No |
+| Is the layout responsive? | Reflows columns | Stays single-column | Collapses or scrolls |
+
+### Selection: Dropdown vs Radio vs Segmented Control
+
+| Question | Dropdown (Select) | Radio Group | Segmented Control |
+|---|---|---|---|
+| How many options? | 5+ | 2-5 | 2-4 |
+| Is the current selection always visible? | No (collapsed) | Yes | Yes |
+| Does it need minimal space? | Yes | No | Moderate |
+| Is it a mode switch (affects visible content)? | Rarely | Sometimes | Yes |
+
+### Document these decision rules in the DESIGN.md when the system contains multiple components that serve overlapping purposes. Include them as a subsection under Components or as a dedicated "Component Selection Guide" section.

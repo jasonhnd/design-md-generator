@@ -93,6 +93,9 @@ export interface ElementStyle {
   transition: string;
   childrenCount: number;
   hasImage: boolean;
+  structuralRegion?: 'nav' | 'header' | 'main' | 'footer' | 'aside' | 'unknown';
+  nearestLandmark?: string;
+  isInsideMedia?: boolean;
 }
 
 export interface PseudoElementInfo {
@@ -162,8 +165,35 @@ export interface AnimationInfo {
 
 // ─── Interaction Capture Types ────────────────────────────────────────────────
 
+export interface LoadingStateInfo {
+  selector: string;
+  classes: string;
+  detectionMethod: 'class' | 'aria-busy' | 'role-progressbar';
+  visualTreatment: Record<string, string>;
+}
+
+export interface EmptyStateInfo {
+  selector: string;
+  classes: string;
+  textContent: string;
+  hasIcon: boolean;
+  hasHeading: boolean;
+  hasBody: boolean;
+  hasCta: boolean;
+}
+
+export interface ErrorStateInfo {
+  selector: string;
+  classes: string;
+  detectionMethod: 'class' | 'aria-invalid' | 'role-alert';
+  visualTreatment: Record<string, string>;
+}
+
 export interface InteractionData {
   captures: InteractionCapture[];
+  loadingStates?: LoadingStateInfo[];
+  emptyStates?: EmptyStateInfo[];
+  errorStates?: ErrorStateInfo[];
 }
 
 export interface InteractionCapture {
@@ -205,6 +235,14 @@ export interface IconSystemInfo {
   strokeWidth: number | null;
   colorMode: 'currentColor' | 'fixed' | 'mixed';
   totalCount: number;
+  strokeWidthDistribution?: { value: number; count: number }[];
+  sizeDistribution?: { size: number; count: number }[];
+  labeledPercentage?: number;
+  colorUsage?: {
+    currentColor: number;
+    fixedFill: number;
+    strokeOnly: number;
+  };
 }
 
 // ─── Motion System Types ──────────────────────────────────────────────────────
@@ -234,6 +272,21 @@ export interface A11yTokens {
   }[];
   minTouchTarget: { width: number; height: number };
   minFontSize: string;
+  ariaRoleStats?: Record<string, number>;
+  tabOrder?: {
+    tabbableCount: number;
+    hasPositiveTabindex: boolean;
+    positiveTabindexCount: number;
+  };
+  langAttribute?: string | null;
+  skipLinkDetected?: boolean;
+  reducedMotionSupport?: boolean;
+  altTextCoverage?: {
+    withAlt: number;
+    withoutAlt: number;
+    total: number;
+    percentage: number;
+  };
 }
 
 // ─── Design Boundary Types ────────────────────────────────────────────────────
@@ -256,6 +309,14 @@ export interface DesignBoundary {
   };
   sharedTokenSummary: string | null;
   anomalies: { url: string; description: string }[];
+}
+
+// ─── Stability Classification ────────────────────────────────────────────────
+
+export interface StabilityClassification {
+  layer: 'infrastructure' | 'system' | 'campaign' | 'content';
+  confidence: number;  // 0.0 to 1.0
+  signals: string[];   // human-readable reasons for classification
 }
 
 // ─── Design Tokens (Final Output) ─────────────────────────────────────────────
@@ -351,6 +412,7 @@ export interface ColorToken {
   pagesCoverage: number;
   sourcePages: { url: string; frequency: number }[];
   confidence: 'high' | 'medium' | 'low';
+  stability?: StabilityClassification;
 }
 
 export interface TypographyLevel {
@@ -365,6 +427,7 @@ export interface TypographyLevel {
   typicalTags: string[];
   sampleTexts: string[];
   confidence: 'high' | 'medium' | 'low';
+  stability?: StabilityClassification;
 }
 
 export interface ShadowToken {
@@ -372,17 +435,20 @@ export interface ShadowToken {
   frequency: number;
   type: 'border-shadow' | 'elevation' | 'inset' | 'ring' | 'complex-stack';
   typicalElements: string[];
+  stability?: StabilityClassification;
 }
 
 export interface RadiusToken {
   value: string;
   frequency: number;
   typicalElements: string[];
+  stability?: StabilityClassification;
 }
 
 export interface ComponentGroup {
   type: string;
   variants: ComponentVariant[];
+  stability?: StabilityClassification;
 }
 
 export interface ComponentVariant {

@@ -508,3 +508,262 @@ Before publishing a DESIGN.md, run these checks:
 - [ ] No restating of table data in adjacent prose
 - [ ] Shadow philosophy paragraph exists and names the principle
 - [ ] Information density: no sentence survives the deletion test without losing information
+
+---
+
+## 15. Comparative Framing Pattern
+
+The best DESIGN.md files position the system relative to convention. Comparative framing tells the reader not just what the system does, but what it chose NOT to do -- and that negative space is where design intent lives.
+
+### Sentence templates
+
+- "Where most systems use X, this system uses Y"
+- "Unlike the typical approach of X, this system..."
+- "This is not the [common thing]; it is [the specific thing]"
+- "The conventional choice would be X; here, Y signals [intent]"
+- "Rather than defaulting to X, the system [specific verb] Y"
+
+### Good/Bad example pairs
+
+**1. Shadow philosophy**
+
+BAD: "The system uses subtle shadows for depth."
+
+GOOD: "Where most systems use neutral gray shadows, this system tints its elevation shadows with brand navy (`rgba(50,50,93,0.25)`), creating chromatic depth rather than flat Material-style layering."
+
+**2. Typography weight**
+
+BAD: "Headlines use a light weight for a refined look."
+
+GOOD: "Unlike the convention of bold (700) headlines that shout for attention, this system uses weight 300 at display sizes -- whispered authority that trusts its content to carry the page."
+
+**3. Border technique**
+
+BAD: "Borders are implemented with box-shadow."
+
+GOOD: "This is not a traditional CSS border; it is a zero-blur box-shadow (`0 0 0 1px rgba(0,0,0,0.08)`) that achieves a border-like hairline without participating in the box model, preventing the 1px layout shifts that CSS borders cause."
+
+**4. Color palette**
+
+BAD: "The color palette is mostly neutral with one accent."
+
+GOOD: "Rather than the typical SaaS approach of warm gray neutrals with a blue CTA, this system commits to a true achromatic neutral scale (`#171717` to `#fafafa`) and reserves all chromaticity for a single accent (`#5e6ad2`), making every colored pixel a deliberate signal."
+
+**5. Spacing**
+
+BAD: "The system uses generous whitespace."
+
+GOOD: "The conventional 40-60px section spacing would feel timid here. At 80-120px between sections, the whitespace IS the design -- gallery-like emptiness that frames compressed, tightly-tracked headlines as precious objects."
+
+**6. Button design**
+
+BAD: "Buttons have a minimal style."
+
+GOOD: "Where most design systems give buttons solid backgrounds and obvious affordance, this system builds buttons from near-transparent overlays (`rgba(255,255,255,0.04)`) -- the button is barely there until hover reveals it, trusting the user to recognize interactive patterns."
+
+### When to use comparative framing
+
+- Opening paragraphs (1-2 comparisons max)
+- Shadow philosophy paragraph
+- Typography principles section
+- Any key characteristic that contradicts convention
+- Do's and Don'ts entries where the "Don't" IS the convention
+
+---
+
+## 16. Named Principle Pattern
+
+Every major design decision should get a memorable name. Unnamed decisions get forgotten. Named decisions become system vocabulary that the team can reference in code reviews, Slack, and PRs.
+
+### Naming formula
+
+**Pattern A:** [adjective] + [noun]
+**Pattern B:** [technique]-as-[metaphor]
+**Pattern C:** [quality] + [domain]
+
+### 10+ examples across design domains
+
+**Color:**
+- **Chromatic depth** -- shadows tinted with brand hue rather than neutral black
+- **Achromatic commitment** -- zero chromatic color in the neutral scale; all saturation reserved for accents
+- **Single-hue discipline** -- one accent hue across the entire system; no secondary chromatic colors
+
+**Typography:**
+- **Whispered authority** -- headline weight 300 at display sizes; light weight as signature
+- **Compressed infrastructure** -- extreme negative letter-spacing (-2.4px+) that makes text feel minified for production
+- **Bilingual parallelism** -- dual-language text set with identical visual weight and spacing regardless of script
+
+**Shadow:**
+- **Shadow-as-border** -- zero-blur box-shadow replaces CSS border throughout the system
+- **Ambient occlusion** -- individual shadow layers never exceeding 0.05 opacity; light that feels natural rather than rendered
+- **Parallax depth** -- multi-layer shadow stacks where tinted and neutral layers sit at different offsets
+
+**Layout:**
+- **Gallery emptiness** -- section spacing exceeding 80px; whitespace as the primary design element
+- **Content density polarity** -- compressed text set against vast surrounding whitespace; the tension IS the layout
+
+**Interaction:**
+- **Transparency-first affordance** -- interactive elements built from near-zero opacity overlays; the component reveals itself on hover
+- **Light weight as signature** -- the system's identity is defined by what it does NOT do (no bold, no heavy shadows, no solid backgrounds)
+
+### How to introduce a named principle
+
+Introduce it in the prose where the observation first appears, then reference it by name in later sections:
+
+> "Stripe's shadow system is built on a principle of **chromatic depth**: where most systems use neutral gray or black shadows, Stripe's primary shadow color (`rgba(50,50,93,0.25)`) is a deep blue-gray that echoes the brand's navy palette."
+
+Later: "The card shadow follows the **chromatic depth** principle established in the elevation section."
+
+---
+
+## 17. Frequency Interpretation Pattern
+
+Frequency data transforms a flat color/shadow/radius list into a narrative of intent. Raw frequency is noise; interpreted frequency is design strategy.
+
+### Interpretation framework
+
+| Frequency tier | What it signals | How to narrate it |
+|---|---|---|
+| Dominant (>40% of usage) | System default, workhorse, structural backbone | "The system's foundation is X -- it appears on Y% of surfaces and defines the baseline from which all variation departs." |
+| Common (15-40%) | Supporting role, secondary structure | "X serves as the structural companion to [dominant], appearing wherever [context]." |
+| Moderate (5-15%) | Intentional accent, tactical emphasis | "X is deployed with precision -- frequent enough to feel systemic, rare enough to draw the eye." |
+| Rare (<5%) | Exception, special case, reserved signal | "X appears only in [specific context], reserved as a high-salience signal that breaks the dominant pattern." |
+| Absent (0% in expected role) | Deliberate omission, conscious refusal | "The absence of X is the design decision. Where most systems would [convention], this system [alternative]." |
+
+### Good frequency narration examples
+
+> "Of the 14 distinct colors extracted, `#171717` accounts for 62% of text usage -- it IS the reading experience. The accent blue (`#5e6ad2`) appears on just 3% of elements, but 100% of those elements are interactive. Frequency reveals intent: the system is achromatic by default, chromatic only by action."
+
+> "`border-radius: 6px` appears on 78% of rounded elements. The system has exactly one other radius value: `9999px` for pills and avatars. This binary radius vocabulary -- sharp rectangle, soft rectangle, or full circle -- eliminates the gradation that creates visual noise in most systems."
+
+> "The `0 0 0 1px rgba(0,0,0,0.08)` shadow appears 4x more frequently than any elevation shadow. This is not a depth system; it is a border system wearing shadow syntax."
+
+### Zero-frequency narration
+
+The most interesting frequency observation is often what is MISSING:
+
+> "No color in the extracted palette falls in the warm spectrum (red, orange, yellow outside of semantic status colors). The absence is deliberate: this is a cool-only brand, and any warm tone introduced by an implementer would violate the system's thermal identity."
+
+---
+
+## 18. Intent Narration Pattern
+
+Intent narration bridges the gap between WHAT a system does and WHY it does it. Every design decision is a choice among alternatives; intent narration names the road not taken.
+
+### Sentence templates
+
+- "The system uses X because Y"
+- "[Value] at [context] signals [meaning]"
+- "This choice trades [sacrifice] for [benefit]"
+- "X over Y because [rationale]"
+- "[Observation] -- a deliberate trade of [cost] for [gain]"
+
+### 5+ examples
+
+> "Weight 510 sits between regular (400) and medium (500) -- a micro-emphasis that creates distinction without the visual interruption of a full weight jump. The system trades conventional weight stops for in-between precision."
+
+> "`#171717` instead of `#000000` for primary text signals a system that values reading comfort over maximum contrast. The 2% lightness shift is invisible in isolation but measurable across 2000 words of body copy."
+
+> "Individual shadow layer opacity never exceeds 0.05 -- the system chooses ambient realism over Material-style elevation theatrics. The shadows feel like natural light rather than computer-generated depth."
+
+> "Letter-spacing of -2.4px at display sizes compresses character width by roughly 8%, creating text that feels like infrastructure -- minified, efficient, engineered. The system trades readability at glance for density of meaning."
+
+> "Section padding at 96px vertical when the conventional range is 40-60px -- the system spends screen real estate on emptiness, signaling that the content within each section is complete and self-contained rather than a continuous scroll."
+
+### Intent narration test
+
+Ask: "Does this sentence tell me something I could not infer from looking at the CSS value alone?" If no, the sentence is observation without intent. Add the WHY.
+
+---
+
+## 19. Brand Voice Detection Pattern
+
+When the extracted data includes `sampleTexts` from tokens.json, UI text from buttons, headings, and labels, or microcopy from forms and errors, these are signals of the brand's content voice.
+
+### How to infer tone from sampleTexts
+
+1. **Sentence length**: Short, punchy sentences (3-5 words) signal directness and confidence. Long, qualified sentences signal formality or caution.
+2. **Punctuation**: Exclamation marks suggest enthusiasm or consumer-facing energy. Periods-only suggests restraint. Em-dashes and semicolons suggest editorial sophistication.
+3. **Person**: "You/your" signals conversational, user-centric voice. "We" signals partnership. Absence of pronouns signals institutional formality.
+4. **Jargon density**: Technical terms without explanation signal expert audience. Explained terms signal broader audience.
+
+### How to detect casing conventions from button labels
+
+| Observed pattern | Convention name | Brand signal |
+|---|---|---|
+| "Get Started" | Title Case | Traditional, corporate, formal |
+| "Get started" | Sentence case | Modern, approachable, lowercase-friendly |
+| "GET STARTED" | All caps | Commanding, urgent, action-oriented |
+| "get started" | All lowercase | Ultra-casual, startup, counter-cultural |
+| "はじめる" / "始める" | Localized verb | Japanese-native, not translated |
+
+### How to identify emoji policy
+
+- **Emojis in headings or buttons**: Consumer-facing, playful, younger demographic
+- **Emojis in body text only**: Light personality injection, still professional
+- **Emojis in documentation/help**: Approachable support tone
+- **Zero emojis anywhere**: Formal, enterprise, or conservative brand -- document this as a deliberate absence
+- **Emoji as icon substitute**: Functional, not decorative (e.g., checkmark emoji replacing an icon)
+
+### How to distinguish formal vs informal voice
+
+| Signal | Formal | Informal |
+|---|---|---|
+| Contractions | "do not", "cannot" | "don't", "can't" |
+| Error messages | "An error has occurred" | "Something went wrong" |
+| Empty states | "No results found" | "Nothing here yet" |
+| Button text | "Submit Request" | "Send it" |
+| Success messages | "Operation completed successfully" | "Done!" |
+
+### Documentation format
+
+In the DESIGN.md Content & Voice section:
+
+```markdown
+## Content & Voice
+
+**Tone**: [adjective], [adjective], [adjective] (e.g., "precise, restrained, institutional")
+**Casing**: [Sentence case / Title Case / ALL CAPS] on buttons and headings
+**Emoji policy**: [None / Functional only / Decorative in body / Throughout]
+**Person**: [Second person "you" / First person plural "we" / Impersonal]
+**Sample voice**: "[exact button text]", "[exact heading]", "[exact error message]"
+```
+
+---
+
+## 20. Self-Containment Checklist (Agent Prompt Guide)
+
+Every agent prompt must be fully self-contained. The test: "Can an AI agent copy-paste this prompt and build the component with zero lookups into the rest of the DESIGN.md?"
+
+### Required values in every prompt
+
+- [ ] Font family name (exact string, e.g., `"Inter"`, `"sohne-var"`)
+- [ ] Font size in px
+- [ ] Font weight as numeric value
+- [ ] Line-height (unitless ratio or px)
+- [ ] Letter-spacing (px or em, including `0` if default)
+- [ ] All hex color values for every element (background, text, border, icon)
+- [ ] Padding (all sides, shorthand or explicit)
+- [ ] Border-radius in px
+- [ ] Box-shadow (full CSS value or `none`)
+- [ ] Transition (property, duration, easing)
+- [ ] OpenType features if the system uses them (`ss01`, `cv01`, etc.)
+- [ ] Border (width, style, color) or explicit `none`
+
+### Self-containment test
+
+1. Copy the prompt into a blank AI chat
+2. Ask: "Build this component"
+3. If the AI asks a clarifying question about any visual property, the prompt fails
+4. If the AI guesses any value (defaulting to `border-radius: 8px` because no radius was specified), the prompt fails
+
+### Failure examples and fixes
+
+**FAILS**: "Create a button with the primary brand color" -- which color?
+**PASSES**: "Create a button with background `#5e6ad2`, text `#ffffff`"
+
+**FAILS**: "Use the system font at heading size" -- which font, which size?
+**PASSES**: "Use Inter at 32px weight 600 line-height 1.2 letter-spacing -0.96px"
+
+**FAILS**: "Add the standard card shadow" -- what is standard?
+**PASSES**: "Add shadow `0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.08)`"

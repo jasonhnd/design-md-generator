@@ -232,3 +232,112 @@ When a color could reasonably be assigned to multiple roles:
 3. **Assign the more specific role.** If a color could be `primary` or `link`, and it appears on both buttons and inline links, assign `primary` (the broader role) and note that link color matches primary.
 4. **Document the ambiguity.** If genuinely unclear, assign the most likely role and add a note: "Also used as [alternative role]."
 5. **Never leave a frequently-used color unassigned.** Every color that appears more than incidentally must have a role.
+
+---
+
+## Frequency Interpretation by Role
+
+Each color role has an expected frequency range. Deviations from these expectations are design signals worth narrating.
+
+| Role | Expected frequency | What high frequency means | What low/zero frequency means |
+|---|---|---|---|
+| primary | Moderate-high (appears on all CTAs, key links) | Brand-heavy system; primary color carries the identity | Achromatic system; brand color is accent-only |
+| secondary | Moderate (less than primary, more than accent) | Multi-brand system with visual pairing | Single-brand system; secondary role may not exist |
+| accent | Low (badges, highlights, special emphasis) | System uses chromatic variety for differentiation | System relies on weight/size hierarchy, not color |
+| background | Dominant (largest surface area) | Standard -- this IS the canvas | Dark mode or gradient-based system without a single background |
+| surface | High (cards, panels, containers) | Card-heavy, modular layout | Flat design without layered surfaces |
+| text-primary | Dominant (most text on the page) | Standard reading experience | Display-only system (rare) |
+| text-secondary | Moderate (meta, labels, helpers) | Information-dense UI with clear hierarchy | Minimal UI with binary text treatment (on/off) |
+| border | High (separators, input outlines, card edges) | Structured, compartmentalized layout | Shadow-as-border system or borderless design |
+| destructive | Low (only in error/danger contexts) | Standard -- danger signals are rare by design | System omits explicit error styling (flag this as a gap) |
+| success/warning/info | Low (status indicators only) | Standard -- semantic colors are situational | System uses a single color for all status (document this) |
+
+### Narrating frequency deviations
+
+When an extracted frequency deviates from the expected range, narrate the deviation:
+
+> "The `primary` blue appears on only 3% of elements -- far below the typical primary frequency. This system treats its brand color as an accent, not a foundation. The real primary is the achromatic scale."
+
+> "The `border` role has zero occurrences of CSS `border` properties. Instead, 47 elements use `box-shadow: 0 0 0 1px` as border substitute. The system's border philosophy is shadow-native."
+
+---
+
+## Brand vs Structural Color Classification
+
+Not all colors serve the same strategic purpose. Classify each color as **Brand** or **Structural** to help the DESIGN.md reader understand which colors are negotiable (structural) and which are identity-critical (brand).
+
+### Brand colors
+
+Colors that define the company's visual identity. Changing them changes the brand.
+
+- Primary brand hue and its tints/shades
+- Secondary brand hue (if part of the brand identity, not just a UI convenience)
+- Gradient endpoints that appear in the logo or marketing
+- Any color specified in brand guidelines
+
+**Identification signals:**
+- Appears in the logo or favicon
+- Used consistently across marketing site, app, and printed materials
+- Matches a specific Pantone or brand spec
+
+### Structural colors
+
+Colors that serve functional or UI-architectural purposes. They could change without changing the brand.
+
+- Neutral text scale (text-primary, text-secondary, text-muted)
+- Surface and background colors
+- Border and divider colors
+- Semantic status colors (success, warning, destructive, info)
+- Focus ring color (unless it matches the brand color)
+- Shadow tint colors
+
+**Identification signals:**
+- Serves a functional UI role (readability, separation, status)
+- Similar across many different brands (most neutrals, most status colors)
+- Would be replaced in a white-label scenario
+
+### Documentation format
+
+In the DESIGN.md color section, group or tag colors:
+
+```markdown
+### Brand Colors
+- **Stripe Purple** (`#533afd`) — [brand] Primary identity color, CTA backgrounds
+
+### Structural Colors
+- **Text Primary** (`#0a2540`) — [structural] Body text, headings
+- **Surface** (`#f6f9fc`) — [structural] Card and panel backgrounds
+```
+
+---
+
+## CSS Variable Naming Conventions
+
+When the extracted data contains CSS custom properties, document the naming convention to help implementers maintain consistency.
+
+### Common naming patterns
+
+| Pattern | Example | Framework signal |
+|---|---|---|
+| `--color-{role}` | `--color-primary`, `--color-surface` | Custom / vanilla CSS |
+| `--{role}` | `--primary`, `--destructive`, `--muted` | shadcn/ui, Radix Themes |
+| `--{component}-{property}` | `--btn-bg`, `--card-border` | Component-scoped tokens |
+| `--{scale}-{step}` | `--gray-100`, `--blue-500` | Palette-scale systems (Tailwind-like) |
+| `--{semantic}-{variant}` | `--text-primary`, `--bg-surface` | Semantic token layer |
+
+### What to document
+
+1. **The naming convention itself** -- which pattern the system uses
+2. **The token layer** -- whether tokens are primitive (raw values) or semantic (role-based aliases)
+3. **Dark mode strategy** -- whether dark mode swaps token values or uses separate token names
+4. **Any inconsistencies** -- naming deviations that break the pattern (document as potential tech debt)
+
+### Example documentation block
+
+```markdown
+## CSS Variable Naming
+
+Convention: `--{category}-{role}` (semantic layer over a `--{hue}-{step}` primitive layer)
+Dark mode: Same variable names, values swapped via `.dark` class on `<html>`
+Inconsistency: `--accent` exists alongside `--color-accent`; likely legacy alias
+```

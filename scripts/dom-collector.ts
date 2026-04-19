@@ -41,6 +41,49 @@ export async function collectDOM(page: Page): Promise<DOMCollection> {
       return trimmed.length > max ? trimmed.slice(0, max) : trimmed;
     }
 
+    function getStructuralRegion(
+      el: Element,
+    ): 'nav' | 'header' | 'main' | 'footer' | 'aside' | 'unknown' {
+      let current: Element | null = el;
+      while (current && current !== document.body) {
+        const tag = current.tagName.toLowerCase();
+        if (tag === 'nav') return 'nav';
+        if (tag === 'footer') return 'footer';
+        if (tag === 'header') return 'header';
+        if (tag === 'aside') return 'aside';
+        if (tag === 'main') return 'main';
+        current = current.parentElement;
+      }
+      return 'unknown';
+    }
+
+    function getNearestLandmark(el: Element): string {
+      let current: Element | null = el;
+      const landmarkTags = new Set(['nav', 'header', 'main', 'footer', 'aside', 'section']);
+      while (current && current !== document.body) {
+        const tag = current.tagName.toLowerCase();
+        if (landmarkTags.has(tag)) {
+          if (tag === 'section' && !current.getAttribute('aria-label')) {
+            current = current.parentElement;
+            continue;
+          }
+          return tag;
+        }
+        current = current.parentElement;
+      }
+      return '';
+    }
+
+    function isInsideMedia(el: Element): boolean {
+      const mediaTags = new Set(['img', 'picture', 'video', 'canvas', 'svg']);
+      let current: Element | null = el.parentElement;
+      while (current && current !== document.body) {
+        if (mediaTags.has(current.tagName.toLowerCase())) return true;
+        current = current.parentElement;
+      }
+      return false;
+    }
+
     // ── 1. CSS Custom Properties ──────────────────────────────────────────
 
     function extractCSSVariables(): CSSVariable[] {
@@ -197,6 +240,10 @@ export async function collectDOM(page: Page): Promise<DOMCollection> {
           hasImage:
             !!el.querySelector('img') ||
             cs.backgroundImage !== 'none',
+          // Structural region
+          structuralRegion: getStructuralRegion(el),
+          nearestLandmark: getNearestLandmark(el),
+          isInsideMedia: isInsideMedia(el),
         };
       });
     }

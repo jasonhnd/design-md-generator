@@ -46,10 +46,10 @@ function parseArgs(argv: string[]): ExtractOptions {
   const urls: string[] = [];
   let output = '';
   let concurrency = 5;
-  let maxPages = 20;
+  let maxPages = 8;
   const extraUrls: string[] = [];
   let noDarkMode = false;
-  let noInteraction = false;
+  let noInteraction = true;
   let verbose = false;
   let waitFor: WaitStrategy | undefined;
   let mergeWith: string | undefined;
@@ -80,7 +80,14 @@ function parseArgs(argv: string[]): ExtractOptions {
     } else if (arg === '--no-dark-mode') {
       noDarkMode = true;
     } else if (arg === '--no-interaction') {
+      // Already the default; kept for backward compatibility
       noInteraction = true;
+    } else if (arg === '--with-interaction') {
+      noInteraction = false;
+    } else if (arg === '--fast') {
+      maxPages = 5;
+      noInteraction = true;
+      concurrency = 8;
     } else if (arg === '--verbose') {
       verbose = true;
     } else if (!arg.startsWith('--')) {
@@ -140,12 +147,14 @@ Usage: npx ts-node scripts/extract.ts <url1> [url2] [url3] ...
 Options:
   --output <dir>         Output directory (default: output/<domain>/)
   --concurrency <n>      Playwright concurrency (default: 5)
-  --max-pages <n>        Max pages to crawl (default: 20)
+  --max-pages <n>        Max pages to crawl (default: 8)
   --extra-urls <file>    File with additional URLs (one per line)
   --wait-for <strategy>  Wait strategy: networkidle (default), css, selector:<css>
   --merge-with <path>    Merge with existing tokens.json (incremental extraction)
   --no-dark-mode         Skip dark mode detection
-  --no-interaction       Skip interaction state capture
+  --no-interaction       Skip interaction state capture (default: skipped)
+  --with-interaction     Enable interaction state capture (hover/focus/active)
+  --fast                 Fast mode: maxPages=5, noInteraction, concurrency=8
   --verbose              Detailed logging
   --help, -h             Show this help
 `);

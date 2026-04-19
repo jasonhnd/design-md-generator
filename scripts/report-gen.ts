@@ -48,6 +48,126 @@ function isChromatic(c: ColorToken): boolean {
   return Math.max(r, g, b) - Math.min(r, g, b) > 25;
 }
 
+function isDark(hex: string): boolean {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return lumRgb(r, g, b) < 140;
+}
+
+function inferPreviewTokens(colors: ColorToken[], typo: TypographyLevel[], shadows: ShadowToken[], radii: RadiusToken[]): {
+  primaryBg: string; primaryText: string; secondaryBorderColor: string; secondaryTextColor: string;
+  surfaceBg: string; textColor: string; borderColor: string;
+  radius: string; shadow: string; fontFamily: string;
+  headingFont: string; headingWeight: string; bodyFont: string; bodyWeight: string;
+  successColor: string; warningColor: string;
+} {
+  // Primary: darkest chromatic or high-frequency bg color
+  const chromaticBgs = colors.filter((c) => isChromatic(c) && c.usedAs.bgColor > 0);
+  const chromaticAll = colors.filter(isChromatic);
+  const primaryCandidate = chromaticBgs.sort((a, b) => b.frequency - a.frequency)[0]
+    ?? chromaticAll.sort((a, b) => {
+      const aLum = lumRgb(a.rgba[0], a.rgba[1], a.rgba[2]);
+      const bLum = lumRgb(b.rgba[0], b.rgba[1], b.rgba[2]);
+      return aLum - bLum;
+    })[0];
+  const primaryBg = primaryCandidate?.hex ?? '#6b5ce7';
+  const primaryText = contrastOn(primaryBg);
+
+  // Border: most frequent border color
+  const borderCandidates = colors.filter((c) => c.usedAs.borderColor > 0).sort((a, b) => b.usedAs.borderColor - a.usedAs.borderColor);
+  const borderColor = borderCandidates[0]?.hex ?? '#e5e7eb';
+
+  // Secondary button: border + text from brand or text color
+  const secondaryBorderColor = borderColor;
+  const textCandidates = colors.filter((c) => c.usedAs.textColor > 0).sort((a, b) => b.usedAs.textColor - a.usedAs.textColor);
+  const secondaryTextColor = textCandidates[0]?.hex ?? '#1a1a2e';
+
+  // Surface bg: lightest bg color
+  const bgCandidates = colors.filter((c) => c.usedAs.bgColor > 0).sort((a, b) => {
+    const aLum = lumRgb(a.rgba[0], a.rgba[1], a.rgba[2]);
+    const bLum = lumRgb(b.rgba[0], b.rgba[1], b.rgba[2]);
+    return bLum - aLum;
+  });
+  const surfaceBg = bgCandidates[0]?.hex ?? '#ffffff';
+  const textColor = textCandidates[0]?.hex ?? '#1a1a2e';
+
+  // Radius
+  const radius = radii[0]?.value ?? '8px';
+
+  // Shadow
+  const shadow = shadows[0]?.value ?? '0 2px 8px rgba(0,0,0,0.08)';
+
+  // Fonts
+  const headingLevel = typo.find((t) => t.typicalTags.some((tag) => /^h[1-3]$/.test(tag))) ?? typo[0];
+  const bodyLevel = typo.find((t) => t.typicalTags.some((tag) => tag === 'p' || tag === 'span' || tag === 'div')) ?? typo[typo.length - 1] ?? headingLevel;
+  const fontFamily = headingLevel?.fontFamily ?? 'system-ui';
+  const headingFont = headingLevel?.fontFamily ?? 'system-ui';
+  const headingWeight = headingLevel?.fontWeight ?? '700';
+  const bodyFont = bodyLevel?.fontFamily ?? 'system-ui';
+  const bodyWeight = bodyLevel?.fontWeight ?? '400';
+
+  // Success/warning: infer from chromatic palette or use fallbacks
+  const greens = chromaticAll.filter((c) => {
+    const [r, g, b] = c.rgba;
+    return g > r && g > b && g > 100;
+  });
+  const yellows = chromaticAll.filter((c) => {
+    const [r, g, b] = c.rgba;
+    return r > 180 && g > 150 && b < 100;
+  });
+  const successColor = greens[0]?.hex ?? '#22c55e';
+  const warningColor = yellows[0]?.hex ?? '#eab308';
+
+  return {
+    primaryBg, primaryText, secondaryBorderColor, secondaryTextColor,
+    surfaceBg, textColor, borderColor, radius, shadow, fontFamily,
+    headingFont, headingWeight, bodyFont, bodyWeight, successColor, warningColor,
+  };
+}
+
+function buildComponentPreviewHtml(colors: ColorToken[], typo: TypographyLevel[], shadows: ShadowToken[], radii: RadiusToken[]): string {
+  const t = inferPreviewTokens(colors, typo, shadows, radii);
+  const dominantIsDark = isDark(t.surfaceBg);
+  const previewBg = dominantIsDark ? '#1a1a2e' : '#f5f5f7';
+  const previewCardBg = t.surfaceBg;
+
+  return `
+<div class="card">
+  <h2>\u{1F3A8} Live Component Preview</h2>
+  <div class="preview-subtitle">Components rendered using extracted design tokens</div>
+
+  <div class="preview-section-label">Buttons</div>
+  <div class="preview-row">
+    <button class="preview-btn" style="background:${t.primaryBg};color:${t.primaryText};border-radius:${t.radius};font-family:'${esc(t.fontFamily)}',system-ui;">Primary Action</button>
+    <button class="preview-btn--secondary" style="border:1.5px solid ${t.secondaryBorderColor};color:${t.secondaryTextColor};border-radius:${t.radius};font-family:'${esc(t.fontFamily)}',system-ui;">Secondary</button>
+    <button class="preview-btn" style="background:${t.primaryBg};color:${t.primaryText};border-radius:${t.radius};font-family:'${esc(t.fontFamily)}',system-ui;opacity:0.5;cursor:not-allowed;padding:0.45rem 1rem;font-size:0.75rem;">Disabled</button>
+  </div>
+
+  <div class="preview-section-label">Card</div>
+  <div style="background:${previewBg};border-radius:var(--radius);padding:1.25rem;">
+    <div class="preview-card" style="background:${previewCardBg};border:1px solid ${t.borderColor};border-radius:${t.radius};box-shadow:${esc(t.shadow)};">
+      <div class="preview-card__title" style="font-family:'${esc(t.headingFont)}',system-ui;font-weight:${t.headingWeight};color:${t.textColor};">Card Heading</div>
+      <div class="preview-card__body" style="font-family:'${esc(t.bodyFont)}',system-ui;font-weight:${t.bodyWeight};color:${t.textColor};opacity:0.75;">This card uses the extracted surface color, border, radius, shadow, and typography tokens from the analyzed design system.</div>
+      <button class="preview-btn" style="background:${t.primaryBg};color:${t.primaryText};border-radius:${t.radius};font-family:'${esc(t.fontFamily)}',system-ui;font-size:0.8rem;padding:0.4rem 1rem;">Learn More</button>
+    </div>
+  </div>
+
+  <div class="preview-section-label">Input + Button</div>
+  <div class="preview-form">
+    <input class="preview-input" type="text" placeholder="Enter your email" style="border:1.5px solid ${t.borderColor};border-radius:${t.radius};font-family:'${esc(t.bodyFont)}',system-ui;color:${t.textColor};">
+    <button class="preview-btn" style="background:${t.primaryBg};color:${t.primaryText};border-radius:${t.radius};font-family:'${esc(t.fontFamily)}',system-ui;">Subscribe</button>
+  </div>
+
+  <div class="preview-section-label">Badges</div>
+  <div class="preview-row">
+    <span class="preview-badge" style="background:${t.primaryBg};color:${t.primaryText};border-radius:${t.radius};">Brand</span>
+    <span class="preview-badge" style="background:${t.successColor};color:${contrastOn(t.successColor)};border-radius:${t.radius};">Success</span>
+    <span class="preview-badge" style="background:${t.warningColor};color:${contrastOn(t.warningColor)};border-radius:${t.radius};">Warning</span>
+  </div>
+</div>`;
+}
+
 function valScoreColor(s: number): string {
   if (s >= 95) return '#22c55e';
   if (s >= 80) return '#eab308';
@@ -250,6 +370,38 @@ ${googleFontsTag}
   .proof-panel img { width: 100%; height: auto; display: block; }
 
   .footer { text-align: center; padding: 2rem; font-size: 0.7rem; color: var(--text-muted); }
+
+  /* ── Live Component Preview ── */
+  .preview-subtitle { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1.25rem; }
+  .preview-section-label { font-size: 0.7rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 1.25rem 0 0.6rem; }
+  .preview-row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+  .preview-btn {
+    display: inline-block; padding: 0.6rem 1.5rem; font-size: 0.85rem; font-weight: 600;
+    border: none; cursor: pointer; transition: opacity 0.15s, transform 0.1s;
+    text-decoration: none; line-height: 1.4;
+  }
+  .preview-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+  .preview-btn:active { transform: translateY(0); }
+  .preview-btn--secondary {
+    background: transparent; cursor: pointer; transition: opacity 0.15s;
+    font-size: 0.85rem; font-weight: 600; line-height: 1.4; padding: 0.6rem 1.5rem;
+  }
+  .preview-btn--secondary:hover { opacity: 0.7; }
+  .preview-card {
+    padding: 1.25rem; max-width: 380px; width: 100%;
+  }
+  .preview-card__title { font-size: 1.05rem; margin-bottom: 0.4rem; }
+  .preview-card__body { font-size: 0.85rem; line-height: 1.6; margin-bottom: 0.75rem; }
+  .preview-form { display: flex; gap: 0.5rem; align-items: stretch; flex-wrap: wrap; }
+  .preview-input {
+    padding: 0.55rem 0.85rem; font-size: 0.85rem; outline: none; flex: 1; min-width: 160px;
+    background: transparent; transition: border-color 0.15s;
+  }
+  .preview-input:focus { border-color: var(--primary); }
+  .preview-badge {
+    display: inline-block; padding: 0.2rem 0.65rem; font-size: 0.7rem; font-weight: 700;
+    line-height: 1.4;
+  }
 </style>
 </head>
 <body>
@@ -339,20 +491,51 @@ ${tokens.components.map((cg: { type: string; variants: { name: string; count: nu
   </table>
 </div>` : ''}
 
+<!-- ═══════════ LIVE COMPONENT PREVIEW ═══════════ -->
+${buildComponentPreviewHtml(colors, typo, shadows, radii)}
+
 <!-- ═══════════ DARK MODE ═══════════ -->
 ${(tokens as unknown as Record<string, unknown>).darkMode && ((tokens as unknown as Record<string, unknown>).darkMode as { supported: boolean }).supported ? (() => {
   const dm = (tokens as unknown as Record<string, unknown>).darkMode as { supported: boolean; detectionMethod: string; variableDiff: { name: string; lightValue: string; darkValue: string }[]; detectionSource?: string };
+
+  function classifyDarkModeVar(name: string): string {
+    const lower = name.toLowerCase();
+    if (/bg|background|surface|canvas/.test(lower)) return 'Backgrounds & Surfaces';
+    if (/text|foreground|fg|heading|body|label/.test(lower)) return 'Text Colors';
+    if (/border|divider|separator|outline/.test(lower)) return 'Borders';
+    if (/shadow|elevation|ring/.test(lower)) return 'Shadows & Elevation';
+    return 'Other';
+  }
+
+  const groups: Record<string, typeof dm.variableDiff> = {};
+  const groupOrder = ['Backgrounds & Surfaces', 'Text Colors', 'Borders', 'Shadows & Elevation', 'Other'];
+  for (const v of dm.variableDiff) {
+    const group = classifyDarkModeVar(v.name);
+    if (!groups[group]) groups[group] = [];
+    groups[group].push(v);
+  }
+
+  function renderVarRow(v: { name: string; lightValue: string; darkValue: string }): string {
+    return `      <tr><td style="font-family:monospace;font-size:0.75rem">${esc(v.name)}</td><td><span style="display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:middle;margin-right:4px;background:${v.lightValue};border:1px solid var(--border)"></span>${esc(v.lightValue)}</td><td><span style="display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:middle;margin-right:4px;background:${v.darkValue};border:1px solid var(--border)"></span>${esc(v.darkValue)}</td></tr>`;
+  }
+
+  const groupsHtml = groupOrder
+    .filter((g) => groups[g] && groups[g].length > 0)
+    .map((g) => `
+    <div class="color-section-label">${esc(g)} (${groups[g].length})</div>
+    <table class="comp-table">
+      <thead><tr><th>Variable</th><th>Light</th><th>Dark</th></tr></thead>
+      <tbody>
+${groups[g].map(renderVarRow).join('\n')}
+      </tbody>
+    </table>`)
+    .join('\n');
+
   return `
 <div class="card">
-  <h2>🌙 Dark Mode</h2>
+  <h2>🌙 Dark Mode System (${dm.variableDiff.length} variables)</h2>
   <p style="margin-bottom:1rem;font-size:0.85rem;">Detected via <strong>${esc(dm.detectionMethod)}</strong>${dm.detectionSource ? ` on ${esc(dm.detectionSource)}` : ''}</p>
-  ${dm.variableDiff.length > 0 ? `
-  <table class="comp-table">
-    <thead><tr><th>Variable</th><th>Light</th><th>Dark</th></tr></thead>
-    <tbody>
-${dm.variableDiff.slice(0, 15).map((v) => `      <tr><td style="font-family:monospace;font-size:0.75rem">${esc(v.name)}</td><td><span style="display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:middle;margin-right:4px;background:${v.lightValue};border:1px solid var(--border)"></span>${esc(v.lightValue)}</td><td><span style="display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:middle;margin-right:4px;background:${v.darkValue};border:1px solid var(--border)"></span>${esc(v.darkValue)}</td></tr>`).join('\n')}
-    </tbody>
-  </table>` : ''}
+  ${dm.variableDiff.length > 0 ? groupsHtml : '<p style="color:var(--text-muted);font-size:0.85rem;">No variable differences detected.</p>'}
 </div>`;
 })() : ''}
 

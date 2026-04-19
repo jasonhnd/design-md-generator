@@ -1,31 +1,45 @@
 ---
 name: design-md-generator
 description: >
-  Generate publication-quality DESIGN.md files from any website URL. Analyzes CSS, typography,
-  colors, components, and layout to produce a complete design system reference that AI agents
-  can use to reproduce the website's visual style. Use when the user wants to extract design
-  tokens, generate DESIGN.md, analyze a website's design system, or reverse-engineer UI styles.
+  Generate publication-quality DESIGN.md v2 files from any website URL. Analyzes CSS, typography,
+  colors, components, layout, content, accessibility, state patterns, and iconography to produce
+  a 17-section design system reference that AI agents can use to reproduce the website's visual
+  style. Use when the user wants to extract design tokens, generate DESIGN.md, analyze a website's
+  design system, or reverse-engineer UI styles.
 ---
 
-# Design MD Generator
+# Design MD Generator v2
 
 ## Overview
 
-This skill generates a publication-quality DESIGN.md from a live website URL. The process has two distinct phases with a hard boundary between them:
+This skill generates a publication-quality DESIGN.md v2 from a live website URL. The v2 format produces a 17-section document (14 core + 4 optional) that exceeds what any existing AI design system tool generates.
+
+The process has two distinct phases with a hard boundary between them:
 
 **Phase 1 -- Deterministic Extraction (scripts)**
 Node.js scripts crawl the site, extract computed styles, capture screenshots, and produce a structured `tokens.json` file. This phase is mechanical. Every value it produces is ground truth.
 
 **Phase 2 -- Semantic Writing (Claude Code)**
-You read the extraction data and screenshots, then write the DESIGN.md. Your job is semantic interpretation: assigning roles to colors, naming typography levels, describing atmosphere, writing do's/don'ts, and composing self-contained agent prompts.
+You read the extraction data and screenshots, then write the DESIGN.md. Your job is semantic interpretation: assigning roles to colors, naming typography levels, describing atmosphere, writing do's/don'ts, inferring accessibility contracts, documenting content voice, and composing self-contained agent prompts.
 
 **The cardinal rule:** ALL numerical values in the final DESIGN.md -- every hex code, every pixel value, every font-weight number, every shadow string, every border-radius -- MUST be copied verbatim from `tokens.json` or extraction output. You never estimate, round, normalize, or invent values. If a value is not in the extraction data, it does not appear in the DESIGN.md. This is the single most important constraint. Violating it produces phantom values (anti-pattern AP-01) that make the entire document unreliable.
+
+**Hex value cardinal rules:**
+- **NEVER use 3-digit hex shortcuts** (`#000`, `#fff`, `#eee`). ALWAYS use 6-digit lowercase (`#000000`, `#ffffff`, `#eeeeee`).
+- **Colors from CSS variables in tokens.json ARE acceptable** if the variable name and value are documented in the `cssVariables` field.
+- **Before writing ANY hex value, verify it exists** in either `tokens.colorTokens[].hex` or `tokens.cssVariables[].value`. If not found, do not use it.
 
 **What you DO contribute:**
 - Semantic role assignment (which color is "primary," which is "accent")
 - Atmospheric descriptions (what the design feels like, its personality)
 - Descriptive color names ("Ship Red" instead of "Red 1")
 - Typography role mapping (which extracted size is "Display Hero" vs "Body")
+- Named design strategies and principles
+- Brand context and personality inference
+- Content voice analysis from observed copy
+- Accessibility contract inference from observed patterns
+- State matrix construction from observed component states
+- Icon system identification
 - Do's and don'ts derived from observed patterns
 - Self-contained agent prompts with all values inlined
 - Structural observations (shadow-as-border philosophy, compression-as-identity)
@@ -35,6 +49,7 @@ You read the extraction data and screenshots, then write the DESIGN.md. Your job
 - Shadow strings, gradient definitions, border-radius values
 - Breakpoint widths, spacing scale entries, transition durations
 - Font family names, OpenType feature tags
+- Button labels, copy text, or any content not observed on the site
 
 ---
 
@@ -62,13 +77,94 @@ If `ts-node` is not found, install it: `npm install -D ts-node typescript`.
 
 ## Execution Mode
 
-**FULL AUTO.** When this skill is invoked, execute Steps 1-21 without stopping for user confirmation. The only reasons to pause are:
+**FULL AUTO with PARALLEL PIPELINE.** Three phases with maximum parallelism. Target: under 4 minutes for any site.
 
-1. Extraction fails after 2 retries → inform user with error
-2. CAPTCHA detected → inform user to complete manually
-3. Fatal error with no recovery path
+### Phase 1: Fast Extract (Orchestrator)
 
-Do NOT ask "should I proceed?" between steps. Do NOT present intermediate results. Run the entire pipeline and present the final output at the end.
+Run extraction with speed-optimized defaults:
+
+```bash
+cd /path/to/dmdg && npx ts-node scripts/extract.ts <URL> --fast
+```
+
+The `--fast` flag sets: maxPages=5, noInteraction=true, concurrency=8. This typically completes in 60-120 seconds.
+
+If the user needs interaction states (hover/focus/active), they can re-run later with `--with-interaction --merge-with output/<domain>/tokens.json`.
+
+After extraction: read tokens.json, check boundary, review extraction report.
+
+### Phase 2: Write + Proof in Parallel
+
+Launch ALL of these in a SINGLE message — 10 writing subagents + 1 proof task, all parallel:
+
+**10 Writing Subagents (opus model):**
+
+Each receives: tokens.json file path + cardinal rules + stability layer rules (L1+L2 only in main content)
+
+| Agent | Sections | Key Data | Est. Time |
+|-------|----------|----------|-----------|
+| A | §0 Brand Context + §6.5 Motion | meta, motionSystem | ~60s |
+| B | §1 Visual Theme | colorTokens, typographyLevels, screenshots | ~60s |
+| C | §2 Color Palette + §2.5 Dark Mode | colorTokens, cssVariables, darkMode | ~70s |
+| D | §3 Typography | typographyLevels, fontInfo | ~60s |
+| E | §4 Components (first half: Link, Button, Input) | componentGroups[0-2], interactions | ~70s |
+| F | §4 Components (second half: Card, Nav, Footer + cross-patterns) | componentGroups[3+], interactions | ~70s |
+| G | §5 Layout + §6 Depth | spacingSystem, shadowTokens, radiusTokens, layoutPatterns | ~60s |
+| H | §7 Content & Voice + §8 Do's/Don'ts | sampleTexts, all tokens for Do/Don't | ~70s |
+| I | §9 Accessibility + §10 Responsive + §11 State Matrix | a11yTokens, breakpoints, interactions | ~70s |
+| J | §12 Iconography + §13 Agent Prompt Guide | iconSystem, ALL tokens | ~70s |
+
+**Proof Task (run as background Bash command):**
+
+```bash
+cd /path/to/dmdg && npx ts-node scripts/proof.ts <URL> output/<domain>/tokens.json output/<domain>/ &
+```
+
+Proof only needs tokens.json + live site — does NOT need DESIGN.md. Run it during Phase 2 to save ~40 seconds.
+
+**Subagent prompt template:**
+
+```
+You are writing sections [X, Y, Z] of a DESIGN.md v2 for [site]. Use opus model.
+
+CARDINAL RULES:
+- ALL hex values must exist in tokens.colorTokens[].hex or cssVariables[].value — NO EXCEPTIONS
+- 6-digit lowercase hex only (#ffffff not #fff)
+- Numeric font weights only (400 not "regular")
+- Include frequency data for colors/shadows/radius
+- Use STABILITY CLASSIFICATION: only L1 (infrastructure) + L2 (system) tokens in main content.
+  L3 (campaign) in notes marked "Current campaign — subject to change". L4 (content) excluded entirely.
+- Include USE: lines on every component variant with real text
+- Use NAMED PRINCIPLES with comparative framing
+- Agent prompts must be zero-lookup (every value inlined)
+
+tokens.json is at: [path]
+
+Write ONLY your assigned sections. Output as markdown. Do not include sections assigned to other agents.
+```
+
+### Phase 3: Assemble & Deliver (Orchestrator)
+
+After all 10 subagents + proof return:
+
+1. **Assemble**: Concatenate sections in order with header comment block. Fix any h1→h2 header issues.
+2. **Machine pre-validation**: grep all hex values, verify traceable, fix 3-digit hex / uppercase / phantoms
+3. **Run validation**: `npx ts-node scripts/validate.ts` — if score < 80, auto-fix and re-run
+4. **Generate preview**: `npx ts-node scripts/preview-gen.ts`
+5. **Generate report** (proof-data.json already exists from parallel proof): `npx ts-node scripts/report-gen.ts`
+6. **Open report**: `open output/<domain>/report.html`
+7. **Present summary**:
+   ```
+   ✅ Generation complete for [Site].
+   Quality: [score]/100 | Fidelity: [coverage]%
+   Colors: [N] (L1: [n], L2: [n], L3: [n] campaign) | Typography: [N] | Components: [N]
+   DESIGN.md: [lines] lines | Time: [total]s
+   📄 report.html opened in browser.
+   ```
+
+### Fallback: Sequential Mode
+
+If subagent launching is not available (Cursor, Codex, etc.), run Steps 5-20 sequentially within a single context. Add `--with-interaction` to extraction for full state capture since there's no parallel time saving to protect.
 
 ---
 
@@ -156,6 +252,21 @@ Report these metrics to the user:
 4. **Framework detection**: What CSS framework was detected (Tailwind, Bootstrap, none, etc.).
 5. **Dark mode status**: Whether dark mode tokens were extracted.
 6. **Font families**: List all detected font families.
+7. **Motion data**: Whether transition/animation data exists in `motionSystem`.
+8. **Icon data**: Whether icon system information was detected.
+9. **Accessibility data**: Whether ARIA attributes and focus styles were captured.
+10. **Content samples**: Whether button labels, headlines, and copy text were captured.
+
+### Stability Layer Classification
+
+For each token in `tokens.json`, check the `stability` field (if present) or infer stability from context:
+
+- **L1 Infrastructure** (`stability.layer === 'infrastructure'`): navigation, footer, font system, link color, structural grays, focus rings. Stable forever. → Include in main DESIGN.md sections.
+- **L2 System** (`stability.layer === 'system'`): button styles, card patterns, shadow system, spacing scale. Changes with major redesigns. → Include in main DESIGN.md sections.
+- **L3 Campaign** (`stability.layer === 'campaign'`): hero sections, promotional banners, launch-specific accents. Changes per product launch. → Include in a "Current Campaign" appendix, marked with extraction date.
+- **L4 Content** (`stability.layer === 'content'`): product images, color swatches, pricing, copy text. Changes constantly. → EXCLUDE entirely from DESIGN.md.
+
+Apply this filter throughout all subsequent steps. The DESIGN.md documents the **design system** (permanent rules), not the **website content** (temporary values). Every token should pass the test: "Will this value still be correct 6 months from now?"
 
 **If data seems insufficient** (fewer than 8 colors, fewer than 6 typography levels, or zero components):
 
@@ -182,12 +293,58 @@ For each screenshot, observe and mentally note:
 - **Whitespace**: Is spacing generous or tight? Is section separation done through space, color, or borders?
 - **Component consistency**: Do buttons/cards/badges share a visual language? Are there outliers?
 - **Special effects**: Gradients, shadows, glassmorphism, overlapping elements, decorative illustrations?
+- **Content/copy tone**: What language do headlines, CTAs, and descriptions use? Formal, casual, technical?
+- **Icon style**: Are icons outlined, filled, duo-tone? What library do they appear to be from?
+- **State indicators**: Are there loading states, error states, empty states visible?
+- **Accessibility signals**: Are focus rings visible? Are ARIA labels present in interactive elements?
 
-This step is critical for writing the atmosphere section. The screenshots shape your subjective interpretation. The tokens.json provides the values; the screenshots provide the feeling. You need both.
+This step is critical for multiple sections. The screenshots shape your interpretation of brand context (Section 0), atmosphere (Section 1), content voice (Section 7), and accessibility (Section 9). The tokens.json provides the values; the screenshots provide the feeling. You need both.
 
 ---
 
-## Step 5: Generate Section 1 -- Visual Theme & Atmosphere
+## Step 5: Generate Section 0 -- Brand Context
+
+**Before writing, identify:**
+1. What does the company/product do? (from page content, meta tags, hero text)
+2. Who is the target audience? (from language complexity, feature descriptions, pricing)
+3. What personality adjectives describe the design? (from visual observations in Step 4)
+
+### Company/Product Identity
+
+Write 1-2 sentences describing what the product is. Use functional language, not marketing copy:
+
+```
+Stripe is a payment infrastructure platform providing APIs for online payment processing, billing, and financial operations.
+```
+
+### Target Audience
+
+Write 1-2 sentences. Be specific:
+
+```
+Target audience: Software developers and engineering teams integrating payment processing into web and mobile applications. Secondary: finance teams managing billing operations.
+```
+
+### Brand Personality
+
+List 3-5 adjectives. Each MUST have a parenthetical rationale tied to an observable design decision from tokens.json:
+
+```
+- Authoritative (weight 300 headlines -- confidence without visual weight)
+- Technical (monospace `SourceCodePro` in data displays; `"tnum"` for tabular numbers)
+- Premium (blue-tinted shadows `rgba(50,50,93,0.12)` add atmospheric depth)
+- Precise (six-step text-color ladder from `#061b31` to `#7d8ba4`)
+```
+
+### Sources Referenced
+
+List the specific pages that were crawled.
+
+**Word count target:** 60-120 words.
+
+---
+
+## Step 6: Generate Section 1 -- Visual Theme & Atmosphere
 
 **Before writing, re-read ALL screenshots one more time.** This section is where writing quality matters most.
 
@@ -216,7 +373,19 @@ Each paragraph zooms into a different layer. Each MUST include at least two conc
 - **P3 -- Meso (Typography Character):** What font defines the system? What makes its usage distinctive? Reference the font name, a specific weight, a specific size, and letter-spacing values.
 - **P4 -- Micro (Unique Technique):** What single technical decision makes this system different from its peers? Name the technique, provide the exact CSS value, and explain the architectural reason.
 
-**Word count target:** 150-250 words for prose (excluding Key Characteristics list).
+### Named Design Principles
+
+After the prose, name and define the 2-4 most distinctive design principles:
+
+```
+**Design Principles:**
+- **Chromatic Depth**: Shadows carry brand color rather than neutral gray
+- **Compression as Identity**: Aggressive negative tracking defines the typographic voice
+```
+
+### Comparative Framing
+
+At least one sentence in the prose must use a comparative structure: "Unlike most systems...", "Where others...", "This is not..."
 
 ### Key Characteristics List
 
@@ -231,11 +400,13 @@ Every item must have:
 - A back half that describes the WHAT (specific CSS values, font names, pixel measurements)
 - At least one value in backticks
 
+**Word count target:** 200-300 words for prose (excluding Key Characteristics list and Design Principles).
+
 **Reference anti-patterns:** AP-02 (generic description), AP-13 (characteristics without values).
 
 ---
 
-## Step 6: Generate Section 2 -- Color Palette & Roles
+## Step 7: Generate Section 2 -- Color Palette & Roles
 
 ### Read the Color Role Taxonomy
 
@@ -247,34 +418,50 @@ Before assigning any roles, review the role definitions in `resources/color-role
 4. Visual position on page
 5. Color hue alone (weakest -- never use alone)
 
-### Group Colors by Semantic Role
+### Stability Layer Filtering for Colors
 
-Organize extracted colors into `###` subsections based on their semantic role, NOT by hue. Common groupings:
+Group colors by stability layer FIRST, then by brand/structural within each layer:
 
-- `### Primary`
-- `### Accent Colors` or `### Workflow Colors`
-- `### Interactive`
-- `### Neutral Scale`
-- `### Surface & Borders`
-- `### Shadow Colors`
-- `### Console / Code Colors` (if syntax highlighting colors exist)
+- **Only L1 (Infrastructure) + L2 (System) colors appear in the main palette.** These are the design system's permanent color vocabulary.
+- **L3 (Campaign) colors appear in a "Current Campaign Colors" note** at the end of the section, marked with extraction date. These are temporary and will change with the next product launch.
+- **L4 (Content) colors are omitted entirely.** Product images, color swatches, and pricing badge colors are not part of the design system.
 
-Follow the recommended grouping order from the color role taxonomy.
+After listing the palette, add a **"Color Boundary Rules"** subsection that documents the CONSTRAINTS, not just the palette. Example rules:
 
-### Write Color Entries
+```
+### Color Boundary Rules
+
+- Product accent colors (pink, orange, purple seen in product tiles) are confined to product tile contexts. They are NOT system palette entries and should not be used in navigation, buttons, or form elements.
+- Hero gradient endpoints are campaign-level and change per launch cycle. Do not treat them as permanent brand colors.
+- Status colors (success green, error red, warning amber) are L2 system tokens. They are stable and should be used consistently across all components.
+- Any color appearing at frequency < 3 and only in product imagery is L4 content -- do not document it.
+```
+
+### Split into Brand Colors and Structural Colors
+
+**v2 requires a primary split:**
+
+- `### Brand Colors` -- all colors with meaningful hue saturation (chromatic)
+- `### Structural Colors` -- all near-neutral, gray-family, near-black, near-white (achromatic)
+
+Within each, organize into `####` sub-groups as needed.
+
+### Write Color Entries (v2 format)
 
 Format for each color:
 
 ```
-- **Descriptive Name** (`#hexval`): Role description. Personality or usage note.
+- **Descriptive Name** (`#hexval`): frequency {N}. Used as text ({n}), background ({n}), border ({n}), gradient ({n}). CSS var: `--var-name`. Role description. Personality sentence.
 ```
 
-Rules:
-- **Name descriptively**, not generically. Use brand-specific names or role-based names. Write "Ship Red" or "Action Default," never "Blue 1" or "Gray Light."
-- **Hex values are always 6-digit lowercase.** Copy-paste from `tokens.json` `colorTokens`. Never round, adjust, or normalize.
-- **Include CSS variable names** in backticks after the hex if the extraction captured them: `` `--hds-color-heading-solid` ``.
-- **Each entry needs three components:** Identity (name + hex), Role (where it appears), Personality (one sentence about the visual quality or brand significance).
-- **RGBA/HSLA values are acceptable** for shadows and semi-transparent colors.
+**v2 requirements per entry:**
+- **Name descriptively**, not generically. Use brand-specific names or role-based names.
+- **Hex values are always 6-digit lowercase.** Copy-paste from `tokens.json` `colorTokens`.
+- **Frequency count** from extraction data.
+- **Usage breakdown** showing text/bg/border/shadow/gradient/icon counts where non-zero.
+- **CSS variable names** in backticks if captured.
+- **Role description** of where it appears functionally.
+- **Personality sentence** describing the visual quality (not emotion). "A saturated blue-violet that reads as financially authoritative" not "A beautiful color that feels premium."
 
 ### Minimum Requirements
 
@@ -283,16 +470,83 @@ Rules:
 
 ### Dark Mode Overrides
 
-If `tokens.json` contains dark mode data (check for `darkMode` or `darkTokens` fields):
+If `tokens.json` contains dark mode data:
 - Add a `### Dark Mode Overrides` subsection
 - Show changed tokens with their dark mode values
-- Only document colors that CHANGE -- do not repeat colors that remain the same
+- Only document colors that CHANGE
 
 **Reference anti-patterns:** AP-01 (phantom color), AP-03 (semantic misattribution), AP-11 (dark mode omission), AP-12 (vague names), AP-14 (terminology drift).
 
 ---
 
-## Step 7: Generate Section 3 -- Typography Rules
+## Step 7.5: Generate Section 2.5 -- Dark Mode System
+
+This step produces a full parallel dark mode specification. It is conditional on the extraction data.
+
+### Gate Check
+
+1. Read `tokens.darkMode.supported` from `tokens.json`.
+2. If `false` or the `darkMode` field is absent, **skip this step entirely**. Do not generate the section. Proceed to Step 8.
+3. If `true`, continue below.
+
+### Read the Variable Diff
+
+Read `tokens.darkMode.variableDiff` to get the full list of CSS variable changes. Also read `tokens.darkMode.detectionMethod` and `tokens.darkMode.detectionSource`.
+
+### Group Variables by Role
+
+Classify each variable in `variableDiff` into one of these groups using the variable name as the primary signal:
+
+| Group | Matching heuristic |
+|-------|-------------------|
+| Backgrounds & Surfaces | Name contains `bg`, `background`, `surface`, `canvas` |
+| Text Colors | Name contains `text`, `foreground`, `fg`, `heading`, `body`, `label` |
+| Borders | Name contains `border`, `divider`, `separator`, `outline` |
+| Shadows & Elevation | Name contains `shadow`, `elevation`, `ring` |
+| Other | Everything that does not match the above |
+
+### Write the Section
+
+Follow the format spec in `resources/design-md-format.md` Section 2.5. Write these subsections in order:
+
+1. **Detection Method** -- state the trigger mechanism and detection source from extraction data.
+
+2. **Color Mapping Table** -- produce the FULL grouped table. Show ALL variables from `variableDiff`, not a subset. Use the `####` sub-headings for each role group. Each row has: Variable, Light Value, Dark Value, Role (inferred from variable name and context).
+
+3. **Dark Surface Stack** -- extract all dark mode background/surface values from the mapping table. Name each surface level descriptively (Void, Deep Surface, Raised Surface, Elevated Surface, etc.). List from darkest to lightest.
+
+4. **Dark Text Ladder** -- extract all dark mode text color values. List from highest contrast (lightest on dark) to lowest contrast (darkest on dark).
+
+5. **Dark Shadow Adjustments** -- compare shadow-related variables between light and dark. If no shadow variables changed, state "Shadows are unchanged between modes."
+
+6. **Dark Component Overrides** -- identify component-specific treatments (badges, inputs, code blocks, etc.) from the variable names. If none are distinguishable, state that explicitly.
+
+7. **Implementation Notes** -- document the CSS variable strategy, toggle mechanism, and transition behavior.
+
+8. **Dark Mode Strategy Name** -- name the approach with an evocative label. Choose from the taxonomy in the format spec or create a custom name that fits.
+
+### Comparative Observation (Required)
+
+After naming the strategy, write 2-3 sentences that explain how the dark mode FEELS different from light mode structurally. Address at least one of these:
+
+- Does the gray ladder compress or expand?
+- Do accent colors gain or lose relative visual weight?
+- Does the hierarchy flatten or sharpen?
+- Does the typography contrast relationship change?
+
+This is NOT "the background becomes dark" -- it is "the hierarchy flattens because the gray ladder compresses from 8 steps to 5, making accent colors carry proportionally more visual weight."
+
+### Cardinal Rule Reminder
+
+All hex values in this section MUST come from `tokens.darkMode.variableDiff`. Do not invent dark mode colors. If a value is not in the extraction data, it does not appear in the section.
+
+---
+
+## Step 8: Generate Section 3 -- Typography Rules
+
+### Stability Filter
+
+Only document L1 (Infrastructure) and L2 (System) typography tokens as the "system." Font families, the hierarchy scale, and named strategies are all L1/L2. If a typography level is used exclusively in a campaign hero or promotional banner, note it as "campaign-specific" rather than including it in the main hierarchy table. Skip L4 content-level text entirely (e.g., product descriptions, pricing copy styles that change per launch).
 
 ### Font Family Subsection
 
@@ -304,59 +558,62 @@ List all detected font families with their full fallback stacks from `tokens.jso
 - **OpenType Features**: `"liga"` enabled globally; `"tnum"` for tabular numbers.
 ```
 
-Note any OpenType features detected in the extraction.
+### Font Substitution Notes (v2 new)
+
+For every proprietary/commercial font detected, provide:
+
+```
+**Substitution notes:**
+- `sohne-var` is proprietary to Stripe. Closest free alternative: `Inter` (similar x-height, geometry) or `DM Sans` (similar weight range). When substituting, preserve the weight 300 signature and apply equivalent letter-spacing.
+```
 
 ### Hierarchy Table
 
 Build a markdown table with these exact columns:
 
 ```
-| Role | Font | Size | Weight | Line Height | Letter Spacing | Notes |
+| Role | Font | Size | Weight | Line Height | Letter Spacing | Features | Notes |
 ```
 
-Add a `Features` column between `Letter Spacing` and `Notes` if the site uses OpenType feature sets.
+The `Features` column is REQUIRED in v2 (use `-` when no features apply).
 
 **Column rules:**
-- **Role**: Title Case descriptive name. Map each extracted typography level to a semantic role: Display Hero, Section Heading, Sub-heading, Card Title, Body Large, Body, Body Small, Button, Caption, Code Body, Code Caption, Micro Badge, etc.
+- **Role**: Title Case descriptive name. Map each extracted typography level to a semantic role.
 - **Font**: Family name only, no fallbacks.
 - **Size**: `{px}px ({rem}rem)` format. Calculate rem as px/16, two decimal places.
-- **Weight**: Numeric only. Never `bold`, `semibold`, `light`. Use `300`, `400`, `500`, `600`, `700`.
-- **Line Height**: Unitless ratio (e.g., `1.50`). Add descriptor for extremes: `1.00 (tight)`, `1.80 (relaxed)`.
+- **Weight**: Numeric only. Never `bold`, `semibold`, `light`.
+- **Line Height**: Unitless ratio (e.g., `1.50`). Add descriptor for extremes.
 - **Letter Spacing**: Value in px or `normal`.
+- **Features**: OpenType feature tags in backticks or `-` for none.
 - **Notes**: Brief usage note. Mention `text-transform: uppercase` when applicable.
 
-**Row count target:** 12-20 rows. Map ALL distinct typography levels from `tokens.json` `typographyLevels`.
+**Row count target:** 12-20 rows.
 
-### Principles Subsection
+### Named Strategies (v2 replaces "Principles")
 
-Write 3-5 bullet points explaining the typographic philosophy. Each principle has a **bold label** followed by a colon and explanation. Reference specific values from the typography data.
+Write 3-5 bullet points. Each strategy has a **bold name**, 2-3 supporting values, and an architectural benefit:
 
-Look for:
-- What is the weight strategy? (narrow range like 300-400-500, or broad range?)
-- What is the tracking strategy? (progressive negative tracking at large sizes?)
-- Are there OpenType features used systematically?
-- What creates hierarchy -- weight, size, tracking, or a combination?
-- Is there a monospace voice and what role does it play?
+```
+- **Light weight as signature**: Weight 300 at display sizes (56px, 48px, 44px) replaces the convention of heavy 600-700 headlines. Architectural benefit: text hierarchy is driven by size and tracking, not weight, enabling a single-weight visual identity.
+```
+
+The strategy must be NAMED with an evocative label, not just described.
 
 **Reference anti-patterns:** AP-06 (format inconsistency), AP-07 (missing monospace/code font).
 
 ---
 
-## Step 8: Generate Section 4 -- Component Stylings
+## Step 9: Generate Section 4 -- Component Stylings
+
+### Stability Filter
+
+Only document L1 (Infrastructure) and L2 (System) component patterns. Buttons, cards, inputs, navigation, and badges are L1/L2. If a component is campaign-specific (e.g., a promotional countdown banner or launch-specific hero layout), note it as "campaign-specific" in a separate subsection rather than mixing it into the system components. Skip L4 content-level components entirely.
 
 ### Identify Component Groups
 
-Read `tokens.json` `components` section. Create `###` subsections for each component type present. Common groups:
+Read `tokens.json` `components` section. Create `###` subsections for each component type present.
 
-- `### Buttons`
-- `### Cards & Containers`
-- `### Badges / Tags / Pills`
-- `### Inputs & Forms`
-- `### Navigation`
-- `### Image Treatment`
-- `### Distinctive Components` (for site-specific components not in standard taxonomy)
-
-### Document Each Component Variant
+### Document Each Component Variant (v2 requirements)
 
 For each variant, use a `**Bold Variant Name**` heading followed by a property list:
 
@@ -368,130 +625,240 @@ For each variant, use a `**Bold Variant Name**` heading followed by a property l
 - Radius: 6px
 - Font: 16px FontName weight 400, `"ss01"`
 - Shadow: `rgba(0,0,0,0.08) 0px 0px 0px 1px`
-- Hover: background shifts to `#4434d4`
+- Hover: background shifts to `#4434d4` -- darkens to signal actionability without changing the color family
 - Focus: `2px solid var(--ds-focus-color)` outline
 - Transition: `background-color 150ms ease`
-- Use: Primary CTA ("Start Deploying", "Get Started")
+- Use: Primary CTA ("Start Deploying", "Get Started", "Contact Sales")
 ```
 
+**v2 mandatory rules:**
+
+1. **Every variant MUST have a `Use:` line** with 1-3 **real text examples** from the actual site. Not "Primary button" but the actual button labels observed in screenshots or content extraction.
+
+2. **State change rationale** -- every hover/focus/active/disabled line must explain WHY, not just WHAT:
+   - Good: `Hover: background shifts to #4434d4 -- darkens to signal actionability`
+   - Bad: `Hover: #4434d4`
+
+3. **Transition values** on every interactive component.
+
 Rules:
-- All CSS values in backticks
-- Include states: Hover, Focus, Active, Disabled -- whichever were observed in the extraction data
-- Include transition values if extracted
-- The `Use:` line describes where the component appears on the actual site
-- Group related variants under the same `###` subsection
+- All CSS values in backticks.
+- Include states: Hover, Focus, Active, Disabled -- whichever were observed.
+- Group related variants under the same `###` subsection.
 
 ### Look for Distinctive Components
 
-Scan the screenshots for components unique to this site that do not fit standard categories: workflow pipelines, metric cards, trust bars/logo grids, command palettes, pricing tables, comparison grids, etc. Document these under `### Distinctive Components`.
+Scan screenshots for site-specific components: workflow pipelines, metric cards, trust bars, command palettes, pricing tables, comparison grids. Document under `### Distinctive Components`.
 
 **Reference anti-patterns:** AP-04 (missing interaction states), AP-17 (wrong component classification).
 
 ---
 
-## Step 9: Generate Section 5 -- Layout Principles
+## Step 10: Generate Section 5 -- Layout Principles
+
+### Stability Filter
+
+Only document L1 (Infrastructure) and L2 (System) layout tokens. The spacing scale, grid system, and border-radius scale are L1/L2. Campaign-specific layout overrides (e.g., a promotional full-bleed section with non-standard spacing) should be noted as "campaign-specific" if relevant. Skip L4 content layout entirely.
 
 ### Spacing System
 
 From `tokens.json` `layoutPatterns` or `spacingScale`:
-- State the base unit (typically 4px or 8px)
-- List the full spacing scale as a comma-separated series
-- Note any notable gaps or patterns in the scale
+- State the base unit
+- List the full spacing scale
+- **Provide frequency counts** for the top 5-8 most common values:
+
+```
+- 16px (181 occurrences) -- dominant horizontal padding
+- 8px (80 occurrences) -- compact internal spacing
+```
 
 ### Grid & Container
 
 - Max content width from extraction data
-- Hero layout pattern (centered single-column, split, etc.)
-- Feature section column counts (2-column, 3-column, etc.)
-- Notable full-width vs contained patterns
+- Hero layout pattern
+- Feature section column counts
+- Notable patterns
 
 ### Whitespace Philosophy
 
-Write 2-3 **bold-labeled** bullet points describing the site's spatial character. Each MUST reference specific pixel values from the extraction data:
+Write 2-3 **bold-labeled** bullet points. Each MUST:
+- Include a **contrast statement** naming what the system does differently from convention
+- Include **exact px values** as evidence
 
 ```
-- **Gallery emptiness**: Massive vertical padding between sections (80px-120px+). The white space IS the design.
+- **Precision spacing vs. uniform padding**: Unlike systems that use one universal section gap, this system deploys six distinct vertical rhythms (48px, 60px, 64px, 71px, 80px, 96px) -- each tied to a specific content transition.
 ```
 
 ### Border Radius Scale
 
-List radius tokens from smallest to largest, extracted from `tokens.json`:
+List radius tokens with frequency counts showing the dominant radius:
 
 ```
-- Micro (2px): Inline code snippets
-- Standard (6px): Buttons, functional elements
-- Full Pill (9999px): Badges, status pills
+- Standard (4px): Buttons, functional elements -- 55 occurrences (DOMINANT)
 ```
 
 **Reference anti-patterns:** AP-19 (layout without numbers).
 
 ---
 
-## Step 10: Generate Section 6 -- Depth & Elevation
+## Step 11: Generate Section 6 -- Depth & Elevation
+
+### Stability Filter
+
+Only document L1 (Infrastructure) and L2 (System) shadow and depth tokens. The shadow scale and depth philosophy are L1/L2. Campaign-specific depth effects (e.g., a promotional hero with custom glassmorphism) should be noted as "campaign-specific" if relevant. Skip L4 content depth entirely.
+
+### Named Principle
+
+State the depth philosophy upfront using a named category:
+- Chromatic depth / Shadow-as-border / Luminance stepping / Utilitarian / Minimal/flat / or a custom name
 
 ### Shadow Scale Table
 
-Build a table from `tokens.json` `shadowTokens`:
+Build from `tokens.json` `shadowTokens`:
 
 ```
-| Level | Treatment | Use |
-|-------|-----------|-----|
-| Flat (Level 0) | No shadow | Page background, text blocks |
-| Ring (Level 1) | `rgba(0,0,0,0.08) 0px 0px 0px 1px` | Shadow-as-border for most elements |
+| Level | Treatment | Frequency | Use |
 ```
 
-Include 4-6 levels from flat to highest elevation.
+Include 4-6 levels. The Frequency column shows occurrence count.
 
-**Classify each shadow correctly:**
-- Zero-blur, zero-offset shadows (e.g., `0 0 0 1px`) are BORDER shadows, not elevation shadows. Classify them as "Ring" or "Border" level, not as elevation.
-- Only shadows with non-zero blur or offset belong in elevation levels.
+**Call out the most-frequent shadow explicitly:**
+
+```
+**Dominant shadow:** `rgba(50,50,93,0.12) 0px 16px 32px 0px` (45 occurrences) -- the defining elevation treatment.
+```
 
 ### Shadow Philosophy Paragraph
 
-Write 50-100 words describing the system's approach to depth. This paragraph must:
-
-1. Name the principle (chromatic depth, shadow-as-border, luminance stepping, flat, etc.)
+Write 50-100 words that:
+1. Name the principle
 2. Contrast with the conventional approach
 3. Explain the architectural benefit
 4. Provide 1-2 specific RGBA values as evidence
 
-### Decorative Depth (optional subsection)
+**Shadow classification rules:**
+- Zero-blur, zero-offset shadows are BORDER shadows. Classify as "Ring" or "Border" level.
+- Only shadows with non-zero blur or offset belong in elevation levels.
 
-If the site uses gradients, section borders, background color shifts, or other non-shadow depth techniques, document them here.
+**Optional subsection:** `### Decorative Depth`
 
 **Reference anti-patterns:** AP-10 (shadow-border confusion).
 
 ---
 
-## Step 11: Generate Section 6.5 -- Motion & Transitions (Optional)
+## Step 12: Generate Section 6.5 -- Motion System
 
-**Include this section ONLY if** `tokens.json` contains a non-null `motionSystem` field with actual motion data.
+**In v2, this section is REQUIRED.** It is no longer optional.
 
-**If no motion data exists, skip this section entirely.** Do not generate placeholder content.
+### Stability Filter
 
-When present, include:
+Only document L1 (Infrastructure) and L2 (System) motion tokens. Duration scales, easing functions, and reduced-motion policies are L1/L2. Campaign-specific animations (e.g., a launch hero entrance choreography) should be noted as "campaign-specific" if relevant. Skip L4 content motion entirely.
 
-### Duration Scale
-Table of timing tokens:
+### If motion data exists in tokens.json
+
+Write all of these subsections:
+
+**Motion Philosophy** -- 1-2 sentences describing the system's approach to motion (intent, not just values):
+
 ```
-| Name | Duration | Use |
-|------|----------|-----|
-| Fast | 150ms | Hover state changes |
-| Normal | 300ms | Panel reveals, tabs |
-```
-
-### Timing Functions
-Document easing curves with CSS values:
-```
-- **Primary easing**: `cubic-bezier(0.16, 1, 0.3, 1)` -- aggressive ease-out for snappy interactions
+**Motion philosophy:** Motion serves as confirmation, not decoration. Transitions are fast enough to feel responsive but never theatrical.
 ```
 
-### Keyframe Animations
-Named animations with descriptions, only if observed in the extraction data.
+**Duration Scale** -- table with frequency counts:
+
+```
+| Token | Duration | Frequency | Use |
+```
+
+**Easing Functions** -- each curve with CSS value and frequency.
+
+**Enter/Exit Choreography** -- observed patterns for how elements enter/leave viewport. If none observed, state that explicitly.
+
+**Reduced-Motion Fallback** -- observed `prefers-reduced-motion` behavior, or a recommended policy if none was detected:
+
+```
+**Observed:** No reduced-motion media queries detected.
+**Recommended policy:** Replace transform/opacity animations with instant state changes. Preserve color transitions. Remove parallax and scroll-triggered motion entirely.
+```
+
+### If NO motion data exists
+
+Write a minimal section:
+
+```
+## 6.5. Motion System
+
+**Motion philosophy:** No transitions or animations were detected in the extraction data. The site relies on instant state changes. When implementing, consider adding subtle transitions (150ms ease for hover states, 300ms for reveals) to prevent visual jarring, while respecting `prefers-reduced-motion`.
+```
+
+Do NOT generate fake motion values. Acknowledge the absence honestly.
 
 ---
 
-## Step 12: Generate Section 7 -- Do's and Don'ts
+## Step 13: Generate Section 7 -- Content & Voice
+
+**Data sources:** Screenshots (for visible copy), extraction data (for button labels, meta content), and page content captured during crawling.
+
+### Tone (3-5 descriptors)
+
+Each descriptor must have a **real example** from the site:
+
+```
+- **Direct**: "Start now" (not "Get started on your journey")
+- **Technical**: "API requests per second" (uses technical terminology)
+```
+
+### Capitalization Rules
+
+Document observed casing:
+
+```
+- Headlines: Sentence case ("Accept payments online")
+- Buttons: Sentence case ("Start now", "Contact sales")
+- Badges: UPPERCASE with `text-transform: uppercase`
+```
+
+### Button Label Patterns
+
+Group real button labels by pattern:
+
+```
+- Action + Object: "Start now", "Contact sales"
+- Explore: "Learn more", "View documentation"
+```
+
+### Error/Empty State Copy
+
+If observed, document patterns. If not observed, state that and provide tone-consistent recommendations.
+
+### Emoji Policy
+
+```
+- Observed: No emoji in page content, navigation, or CTAs
+```
+
+### Voice Examples
+
+3-5 real copy samples with source location:
+
+```
+1. "Financial infrastructure for the internet" (hero headline)
+2. "Millions of businesses of all sizes use Stripe" (social proof)
+```
+
+### Vibe Paragraph
+
+2-3 sentences capturing brand personality as expressed through copy. Use specific observations:
+
+```
+Stripe writes like a senior engineer explaining a product to a peer -- precise, specific, never patronizing. Copy assumes the reader understands technical concepts and values efficiency over friendliness.
+```
+
+**Word count target:** 150-250 words across all subsections.
+
+---
+
+## Step 14: Generate Section 8 -- Do's and Don'ts
 
 This section is where most DESIGN.md files fail. Apply extreme rigor.
 
@@ -511,74 +878,199 @@ Same format. Each Don't MUST have three components:
 2. Why it is wrong IN THIS SYSTEM (not in general)
 3. What to do instead (with at least one specific value)
 
-**Quality test for each Don't:** Would this surprise a competent developer who knows CSS but does not know this specific system? If a Don't is obvious (e.g., "Don't use too many colors"), it fails. Good Don'ts are counter-intuitive: they warn about things someone would naturally do that are WRONG in this particular system.
+**Counter-intuitive test:** Would this surprise a competent developer who knows CSS but does not know this specific system? If a Don't is obvious (e.g., "Don't use too many colors"), it fails. Good Don'ts are counter-intuitive: they warn about things someone would naturally do that are WRONG in this particular system.
+
+Every Don't must include a **specific threshold or value** -- never "Don't use too many..." but "Don't exceed 8px border-radius."
 
 Examples of counter-intuitive Don'ts:
-- "Don't use weight 600-700 for headlines -- weight 300 is the brand voice" (surprises because most systems use heavy headline weights)
-- "Don't use traditional CSS border on cards -- use the shadow-border technique" (surprises because borders are the default approach)
-- "Don't skip the inner `#fafafa` ring in card shadows -- it's the glow that makes the system work" (surprises because the inner ring seems decorative)
+- "Don't use weight 600-700 for headlines -- weight 300 is the brand voice"
+- "Don't use traditional CSS border on cards -- use the shadow-border technique"
+- "Don't skip the inner `#fafafa` ring in card shadows -- it's the glow that makes the system work"
 
 **Reference anti-patterns:** AP-08 (meaningless don'ts), AP-15 (do's without specifics).
 
 ---
 
-## Step 13: Generate Section 8 -- Responsive Behavior
+## Step 15: Generate Section 9 -- Accessibility Contract
+
+### WCAG Target
+
+Infer the WCAG conformance level from observed behavior:
+
+```
+**Inferred target:** WCAG 2.1 AA. Evidence: focus indicators present, contrast ratios exceed 4.5:1 for body text.
+```
+
+### Contrast Ratios
+
+Calculate contrast ratios for the most common text/background combinations. Build a table:
+
+```
+| Role | Foreground | Background | Ratio | Pass (AA) |
+```
+
+Minimum 5 rows. Use the WCAG contrast formula. For normal text, AA requires 4.5:1. For large text (18px+ or 14px+ bold), AA requires 3:1.
+
+### Focus Indicators
+
+Document observed focus styles per component type:
+
+```
+- Buttons: `2px solid #533afd` outline with `2px` offset
+- Links: underline + color change
+- Inputs: border color change to `#b9b9f9`
+```
+
+If no focus indicators were observed, state that as an accessibility gap.
+
+### Touch/Click Targets
+
+Calculate minimum observed interactive element dimensions from component padding + font size:
+
+```
+- Buttons: minimum 44px height (11.5px + 14px text + 14.5px padding)
+- Smallest target observed: 24px -- below 44px WCAG recommendation
+```
+
+### Reduced-Motion Support
+
+Cross-reference with Section 6.5 motion data.
+
+### ARIA Patterns
+
+Document observed ARIA attributes. If none observed, state that explicitly and note which patterns would be expected.
+
+---
+
+## Step 16: Generate Section 10 -- Responsive Behavior
 
 ### Breakpoints Table
 
 From `tokens.json` `breakpoints`:
 
 ```
-| Name | Width | Key Changes |
-|------|-------|-------------|
-| Mobile | <640px | Single column, reduced heading sizes |
-| Tablet | 640-1024px | 2-column grids begin |
-| Desktop | 1024-1280px | Full layout |
-| Large Desktop | >1280px | Centered with generous margins |
+| Name | Width | CSS Rules | Key Changes |
 ```
 
-4-7 rows covering mobile through large desktop. Use ranges or inequalities for the Width column.
+4-7 rows. The `CSS Rules` column shows the count of CSS rules per breakpoint's media query where available. If not available, omit the column.
 
 ### Touch Targets
 
-3-5 bullet points on mobile interaction sizing:
-- Button padding values at mobile
-- Link spacing and tap target sizing
-- Minimum interactive element dimensions
+3-5 bullet points on mobile sizing.
 
 ### Collapsing Strategy
 
-6-10 bullet points describing how specific components adapt. Use the arrow format:
+6-10 bullet points using arrow format with **exact pixel transitions at specific breakpoints**:
 
 ```
-- Hero headline: 48px display -> 32px on mobile, tracking proportionally relaxed
-- Feature cards: 3-column -> 2-column -> single column stacked
+- Hero headline: 56px -> 44px at 1024px -> 32px at 640px, weight 300 maintained
 ```
 
 ### Image Behavior
 
-3-5 bullet points on responsive image handling:
-- Border treatment at small sizes
-- Aspect ratio preservation
-- Shadow/radius behavior across breakpoints
+3-5 bullet points on responsive image handling.
 
 ---
 
-## Step 14: Generate Section 9 -- Agent Prompt Guide
+## Step 17: Generate Section 11 -- State Matrix
+
+### Build the State Table
+
+Cross components against states:
+
+```
+| Component | Loading | Empty | Error | Disabled | Success |
+```
+
+Minimum 4 component rows (buttons, cards/containers, inputs, tables or lists).
+
+For each cell:
+- State the visual treatment with specific CSS values where observed
+- Use `n/a` when the state does not apply
+- Use `-` when the state applies but was not observed
+
+### Skeleton/Shimmer Patterns
+
+If loading skeletons were observed, document:
+- Background gradient values
+- Animation details
+- Shape matching behavior
+
+If none observed, state that explicitly.
+
+**Data source:** If state data is sparse in tokens.json, infer from screenshots and component styling patterns. For unobserved states, use `-` in the table -- do not invent visual treatments.
+
+---
+
+## Step 18: Generate Section 12 -- Iconography
+
+### Identify the Icon System
+
+Look for icon library signals in the extraction data:
+- SVG class names (e.g. `lucide-`, `heroicon-`, `fa-`)
+- Icon font references
+- Consistent SVG dimensions or viewBox values
+
+### Document Icon Properties
+
+```
+- **Library detected**: [name or "custom SVG" or "none detected"]
+- **Stroke weight**: [value] (if applicable)
+- **Grid size**: [value]
+- **Style**: Outlined / Filled / Duo-tone
+```
+
+### Sizing Scale
+
+Table with frequency:
+
+```
+| Size | Frequency | Use |
+```
+
+### Icon-to-Text Alignment
+
+Document alignment patterns.
+
+### Substitution Recommendation
+
+If icons are proprietary or custom, recommend the closest open-source alternative with matching parameters.
+
+**If no icons were detected:** Write a minimal section acknowledging the absence and recommending an icon library that matches the system's visual personality.
+
+---
+
+## Step 19: Generate Section 13 -- Agent Prompt Guide
+
+### Stability Constraint
+
+Agent prompts must ONLY use L1 (Infrastructure) and L2 (System) colors. Never reference L3 (Campaign) or L4 (Content) colors in prompts. Include the following warning in the Quick Color Reference:
+
+```
+> **Warning:** Product accent colors (pink, orange, purple, etc.) are content-level (L4) and change per launch cycle. Do not hardcode them in agent prompts or component implementations. Only the colors listed below are stable system tokens.
+```
 
 ### Quick Color Reference
 
-A flat bullet list of 8-12 colors with their roles and hex values. No grouping, no personality notes -- fast lookup only:
+Flat bullet list of 8-12 colors. No grouping, no personality notes -- fast lookup only. Only L1+L2 colors appear here.
+
+### Self-Containment Checklist
+
+Print the checklist that validates every prompt in this section:
 
 ```
-- Primary CTA: Name (`#hexval`)
-- Background: Name (`#hexval`)
-- Heading text: Name (`#hexval`)
+Every prompt below satisfies:
+- [ ] Font family, size, weight, line-height, letter-spacing specified
+- [ ] All colors as hex (never "the primary color")
+- [ ] Padding, radius, shadow values included
+- [ ] OpenType features included if system uses them
+- [ ] Hover/focus state values included
+- [ ] Transition values included
 ```
 
 ### Example Component Prompts
 
-Write 5-6 self-contained prompt strings. Each prompt is 100-200 words and MUST be a complete instruction that an AI agent can execute WITHOUT referencing any other section of the DESIGN.md.
+Write 5-6 self-contained prompt strings. Each prompt is 100-200 words and MUST be a complete instruction that an AI agent can execute WITHOUT referencing any other section.
 
 **Self-containment checklist for each prompt:**
 - Font family name included
@@ -587,6 +1079,7 @@ Write 5-6 self-contained prompt strings. Each prompt is 100-200 words and MUST b
 - Padding, radius, shadow values included for containers
 - OpenType features included if the system uses them
 - State variations (hover color, focus ring) where relevant
+- Transition values included
 
 Format each prompt as a quoted string inside a bullet.
 
@@ -599,18 +1092,89 @@ Format each prompt as a quoted string inside a bullet.
 
 ### Iteration Guide
 
-6-8 numbered steps. Each step is a concise directive with at least one concrete value. These steps tell someone implementing this design system what to do FIRST, SECOND, THIRD:
-
-```
-1. Always use shadow-as-border instead of CSS border -- `0px 0px 0px 1px rgba(0,0,0,0.08)` is the foundation
-2. Letter-spacing scales with font size: -2.4px at 48px, -1.28px at 32px, normal at 14px
-```
+6-8 numbered steps. Each step is a concise directive with at least one concrete value.
 
 **Reference anti-patterns:** AP-09 (non-self-contained prompts).
 
 ---
 
-## Step 15: Self-Audit
+## Step 20: Generate Optional Sections 14-17
+
+### Section 14 -- Pattern Compositions
+
+**Include when** the site has distinctive multi-component patterns worth documenting as units. Each pattern gets a `### Pattern Name` heading with component list, layout, spacing, and hierarchy notes.
+
+### Section 15 -- Platform Adaptations
+
+**Include when** the site has distinct treatments for different platforms. Document font substitutions, shadow differences, touch targets, and platform-specific components.
+
+### Section 16 -- Internationalization Notes
+
+**Include when** the site supports multiple languages or uses CJK/RTL text. Document font pairings, line-height adjustments, RTL rules, and text expansion allowances.
+
+### Section 17 -- Design Tokens Dictionary
+
+**Include when** the site uses a formal CSS custom property system with 20+ tokens. Build a flat table of all detected tokens.
+
+**For each optional section:** Only include if the extraction data or screenshots provide sufficient evidence. Do NOT generate speculative content for optional sections. If the data is not there, skip the section entirely.
+
+---
+
+## Step 20.5: Machine Pre-Validation (MANDATORY)
+
+Before the self-audit, run machine-checked validation to catch hallucinated or malformed hex values. This step is non-negotiable -- it runs every time, no exceptions.
+
+### a) Extract all hex colors used in DESIGN.md
+
+```bash
+grep -oP '#[0-9a-fA-F]{3,8}\b' output/<domain>/DESIGN.md | sort -u
+```
+
+Save this list. Every hex value in the output must be accounted for.
+
+### b) Cross-reference against tokens.json
+
+For each hex value found in the DESIGN.md, verify it exists in one of these two locations in `tokens.json`:
+
+1. `colorTokens[].hex` -- the extracted color token hex values
+2. `cssVariables[].value` -- CSS custom property values that resolve to hex
+
+Any hex value NOT found in either source is a **phantom color** and MUST be removed or replaced with the nearest matching token from `tokens.json`. Use Euclidean distance in RGB space to find the nearest token if a replacement is needed.
+
+### c) Find and expand 3-digit hex shortcuts
+
+```bash
+grep -oP '#[0-9a-fA-F]{3}\b' output/<domain>/DESIGN.md
+```
+
+If any 3-digit hex values are found (e.g. `#000`, `#fff`, `#eee`), expand ALL of them to 6-digit lowercase equivalents (`#000000`, `#ffffff`, `#eeeeee`). Then re-verify the expanded value against tokens.json per step (b).
+
+### d) Fix uppercase hex values
+
+```bash
+grep -oP '#[0-9a-fA-F]*[A-F][0-9a-fA-F]*' output/<domain>/DESIGN.md
+```
+
+Convert any uppercase hex values to lowercase.
+
+### e) Run validation script and check score
+
+```bash
+cd /path/to/dmdg && npx ts-node scripts/validate.ts output/<domain>/DESIGN.md output/<domain>/tokens.json
+```
+
+Read the validation score. If the score is **< 80**:
+
+1. Parse the validation output for specific failures
+2. Auto-fix each failure (phantom colors, format issues, missing sections)
+3. Re-run the validation script
+4. Repeat until score >= 80
+
+Only proceed to Step 21 when the machine pre-validation passes with score >= 80.
+
+---
+
+## Step 21: Self-Audit
 
 After generating all sections, perform a systematic self-audit.
 
@@ -628,22 +1192,40 @@ After generating all sections, perform a systematic self-audit.
 - [ ] **[SC-02]** Typography roles match typical HTML element usage.
 - [ ] **[SC-05]** Shadow type classification is correct -- zero-blur shadows are borders, not elevation.
 
-### Completeness Checks
+### Completeness Checks (v2)
 
-- [ ] **[CP-01]** All 9 core sections present (6.5 only if motion data exists).
-- [ ] **[CP-02]** Minimum 8 colors documented.
-- [ ] **[CP-03]** Typography table has 12+ rows.
-- [ ] **[CP-04]** At least 3 component types documented.
+- [ ] **[CP-01]** All 14 core sections present (0-13 + 6.5). Section 2.5 present when `darkMode.supported === true`.
+- [ ] **[CP-02]** Minimum 8 colors documented with frequency counts and usage breakdowns.
+- [ ] **[CP-03]** Typography table has 12+ rows with Features column.
+- [ ] **[CP-04]** At least 3 component types documented with Use: lines and state rationale.
 - [ ] **[CP-05]** Hover/focus states documented for interactive components.
-- [ ] **[CP-12]** Agent prompt guide has 5+ examples.
+- [ ] **[CP-06]** Brand Context has 3-5 personality adjectives with design rationale.
+- [ ] **[CP-07]** Content & Voice has real copy examples from the site.
+- [ ] **[CP-08]** Accessibility Contract has contrast ratio table with 5+ rows.
+- [ ] **[CP-09]** State Matrix has 4+ component rows x 5 state columns.
+- [ ] **[CP-10]** Iconography section identifies the icon system or documents absence.
+- [ ] **[CP-11]** Motion System documents philosophy and reduced-motion policy.
+- [ ] **[CP-12]** Agent prompt guide has 5+ self-contained examples.
+- [ ] **[CP-13]** Colors split into Brand Colors and Structural Colors.
+- [ ] **[CP-14]** Typography includes font substitution notes for proprietary fonts.
+- [ ] **[CP-15]** Named design principles in Section 1.
+- [ ] **[CP-16]** Comparative framing in Section 1 prose.
+- [ ] **[CP-17]** Border radius has frequency counts.
+- [ ] **[CP-18]** Spacing system has frequency counts.
+- [ ] **[CP-19]** Dark Mode System (Section 2.5) has full variable mapping table, strategy name, and comparative observation when `darkMode.supported === true`.
 
 ### Description Quality Checks
 
 - [ ] **[DQ-01]** Zero banned words in descriptive prose.
-- [ ] **[DQ-02]** Opening sentence is differentiating.
+- [ ] **[DQ-02]** Opening sentence is differentiating (passes "3 other sites" test).
+- [ ] **[DQ-03]** Named design principles are present (not just descriptions).
+- [ ] **[DQ-04]** Comparative framing present ("Unlike...", "Where others...").
+- [ ] **[DQ-05]** State change rationale on all hover/focus/active lines.
+- [ ] **[DQ-06]** Voice examples are real quotes from the site, not invented.
 - [ ] **[DQ-07]** At least 3 Don'ts that would surprise a reader.
 - [ ] **[DQ-08]** All agent prompts are self-contained.
 - [ ] **[DQ-09]** No transition filler phrases ("Let's look at...", "In this section...").
+- [ ] **[DQ-10]** Personality sentences describe visual quality, not emotion.
 
 ### Anti-Pattern Checks
 
@@ -666,9 +1248,9 @@ Fix any violations found before proceeding.
 
 ---
 
-## Step 16: Publication Quality Gate
+## Step 22: Publication Quality Gate
 
-Run these three final tests. If any test fails, revise the relevant section before proceeding.
+Run these five final tests. If any test fails, revise the relevant section before proceeding.
 
 ### Test 1: Differentiation
 
@@ -682,9 +1264,17 @@ Pick 3 random items from the Do's and Don'ts section. For each, ask: "Is this se
 
 Pick 1 agent prompt at random. Imagine copying ONLY that prompt into a fresh AI chat with no other context. Would the AI produce a component that visually matches the original site? If the prompt references "the primary color" or "standard spacing" without values, it fails. Revise to include all values inline.
 
+### Test 4: Voice Authenticity
+
+Read Section 7 (Content & Voice). Are ALL voice examples real quotes from the site, or were any invented? Any invented copy must be replaced with actual observed copy. If insufficient copy was observed, reduce the examples rather than fabricate.
+
+### Test 5: Accessibility Completeness
+
+Read Section 9 (Accessibility Contract). Does the contrast ratio table have calculated ratios, or placeholder text? Are focus indicators documented per component type? If any subsection says "not observed" for more than 3 items, flag this as a data gap in the output.
+
 ---
 
-## Step 17: Run Validation Script
+## Step 23: Run Validation Script
 
 **Command:**
 
@@ -698,6 +1288,7 @@ The validation script checks:
 - Format consistency (lowercase hex, numeric weights)
 - Minimum counts (colors, typography rows, components, prompts)
 - Anti-pattern detection (banned words, non-self-contained prompts)
+- v2 section requirements (Brand Context, Content & Voice, Accessibility, State Matrix, Iconography, Motion System)
 
 **Read the validation output.** Fix any failures or warnings. Re-run until the score is >= 95.
 
@@ -705,7 +1296,7 @@ If specific failures cannot be resolved (e.g., a value the validator flags as ph
 
 ---
 
-## Step 18: Generate preview.html
+## Step 24: Generate preview.html
 
 Create an HTML file that demonstrates all design tokens visually. This file serves two purposes: visual verification against the original site, and a standalone reference for the design system.
 
@@ -727,65 +1318,25 @@ The preview.html has two major sections:
 - Spacing scale visualization
 - Shadow/depth scale visualization
 - Border radius scale visualization
+- State matrix visual (loading, error, disabled, empty states)
+- Icon sizing visualization (if icon data exists)
 
 ### Styling Rules
 
-- Style the preview using ONLY values from the DESIGN.md -- the preview is a test of the document's completeness
-- Use the exact font families documented (link Google Fonts or note if the font is proprietary)
-- If the font is proprietary/custom (e.g., Geist, sohne-var), use the closest available fallback and note it in a comment at the top of the HTML
-- Apply the exact shadow values, border-radius values, and spacing values from the DESIGN.md
-- Include the documented hover/focus states via CSS `:hover` and `:focus-visible` rules
+- Style the preview using ONLY values from the DESIGN.md
+- Use the exact font families documented (link Google Fonts or use fallbacks)
+- If the font is proprietary, use the documented substitution and note it in a comment
+- Apply the exact shadow, border-radius, and spacing values
+- Include documented hover/focus states via CSS `:hover` and `:focus-visible`
+- Include a `prefers-reduced-motion` media query if motion data exists
 
 ### Dark Mode Preview
 
-If the DESIGN.md includes dark mode overrides, generate a separate `preview-dark.html` that applies the dark mode token values. Alternatively, include a toggle in the main preview.html that switches between light and dark using CSS custom properties.
+If dark mode overrides exist, include a toggle using CSS custom properties.
 
 ---
 
-## Step 19: Visual Regression Check
-
-Open preview.html in a browser or preview tool. Compare visually against the original site screenshots from Step 4.
-
-Check these aspects:
-- **Colors match**: Do the background, text, and accent colors feel right?
-- **Typography feels right**: Do the headlines have the correct weight and tracking personality?
-- **Shadows/depth correct**: Do card shadows match the depth feel of the original?
-- **Component shapes match**: Do button radii, card radii, and badge shapes match?
-- **Spacing feels right**: Does the overall density and whitespace match?
-
-If there is a significant visual deviation:
-1. Identify the specific mismatch (e.g., "card shadow too heavy" or "headline tracking too loose")
-2. Trace the issue to a specific value in the DESIGN.md
-3. Cross-reference against tokens.json to verify the value is correct
-4. If the DESIGN.md value is wrong, fix it
-5. Regenerate the affected section of preview.html
-6. Re-check
-
-Minor deviations due to proprietary fonts or dynamic content are acceptable. Document them in the README.
-
----
-
-## Step 20: Generate README.md
-
-Create a README.md in the output directory with:
-
-### Content
-
-1. **One-line description**: "Design system reference for [SiteName], extracted from public CSS."
-2. **Disclaimer**: "This is not an official design system. Colors, fonts, and spacing were extracted from publicly accessible CSS and may not be 100% accurate. This document is intended for reference and educational purposes."
-3. **File listing**: List all generated files with one-line descriptions.
-4. **Usage instructions**: How to use the DESIGN.md with AI tools (copy a prompt from Section 9, paste into an AI chat).
-5. **Commercial font notice**: If the site uses proprietary fonts (e.g., Geist, sohne-var, Inter Variable), note that the fonts are not included and must be obtained separately. Provide the font source URL if known.
-6. **Generation metadata**:
-   - Source URL
-   - Generation date
-   - Pages analyzed
-   - Framework detected
-   - Generator version
-
----
-
-## Step 21: Final Output
+## Step 25: Final Output
 
 **Auto-generate all deliverables:**
 
@@ -813,7 +1364,7 @@ Confirm all files are present:
 
 | File | Required | Description |
 |------|----------|-------------|
-| `DESIGN.md` | Yes | The complete design system document |
+| `DESIGN.md` | Yes | The complete v2 design system document |
 | `tokens.json` | Yes | Extracted design tokens |
 | `report.html` | Yes | Quality report + fidelity proof + DESIGN.md viewer |
 | `preview.html` | Yes | Visual token preview |
@@ -822,28 +1373,35 @@ Confirm all files are present:
 Display a summary to the user:
 
 ```
-✅ Generation complete for [SiteName].
+Generation complete for [SiteName] (v2 format).
 
 Quality: [score]/100 | Fidelity: [coverage]%
-Colors: [N] | Typography: [N] levels | Components: [N] types
+Sections: [N]/14 core + [N] optional | Colors: [N] | Typography: [N] levels | Components: [N] types
 
 Key characteristics:
 - [2-3 most distinctive design traits]
 
-📄 report.html opened in browser.
-📋 DESIGN.md ready — copy from report or use directly.
+New in v2:
+- Brand Context: [1 personality adjective]
+- Content Voice: [1 tone descriptor]
+- Accessibility: [WCAG level] inferred
+- State Matrix: [N] components x 5 states
+- Iconography: [library name or "none detected"]
+
+report.html opened in browser.
+DESIGN.md ready -- copy from report or use directly.
 ```
 
 ---
 
 ## User Interaction Points
 
-**Default: NONE.** Run Steps 1-21 autonomously without stopping.
+**Default: NONE.** Run Steps 1-25 autonomously without stopping.
 
 Only pause if:
 - Extraction fails after 2 retries (Step 1)
 - CAPTCHA blocks access (Step 1)
-- Validation score < 60 (Step 17) — show failures, auto-fix, re-validate
+- Validation score < 60 (Step 23) -- show failures, auto-fix, re-validate
 
 Do NOT ask "should I continue?" between sections. Do NOT show intermediate tokens.json contents. The user wants the finished DESIGN.md, not a play-by-play.
 
@@ -857,10 +1415,13 @@ Do NOT ask "should I continue?" between sections. Do NOT show intermediate token
 | Page timeout | Script timeout or partial load | Increase timeout to 60s and retry. If still failing, try with `--no-javascript` for CSS-only extraction. |
 | CORS-blocked CSS | External stylesheets return empty | Note in DESIGN.md limitations section. Proceed with whatever CSS was accessible. |
 | Insufficient data | < 8 colors or < 6 typography levels | Suggest user provide additional page URLs for deeper extraction. |
-| Dark mode incomplete | Some dark mode tokens missing | Document what is available. Add a note: "Dark mode extraction was partial. Values below represent observed overrides only." |
+| Dark mode incomplete | Some dark mode tokens missing | Document what is available. Add note: "Dark mode extraction was partial." |
 | CAPTCHA | Screenshot shows challenge page | Inform user. Skip that page. Proceed with data from other pages. |
-| Proprietary fonts | Font files blocked or DRM-protected | Document the font family name and known fallbacks. Note in README that the font must be obtained separately. |
-| Dynamic styles | Styles loaded via JavaScript after render | Re-run extraction with `--wait-for css` (polls until CSS variables stabilize). Some runtime-injected styles may not be capturable. |
+| Proprietary fonts | Font files blocked or DRM-protected | Document the font family name, fallbacks, and substitution recommendation. Note in README. |
+| Dynamic styles | Styles loaded via JavaScript after render | Re-run extraction with `--wait-for css`. Some runtime-injected styles may not be capturable. |
+| No content data | Button labels and copy text not captured | Sections 7 and 11 will be sparse. Acknowledge gaps explicitly. Do not invent copy text. |
+| No icon data | No icon system detected in extraction | Section 12 will be minimal. Acknowledge absence and recommend compatible library. |
+| No accessibility data | No ARIA or focus data captured | Section 9 contrast table can still be calculated from color data. Document gaps honestly. |
 
 ---
 
@@ -882,11 +1443,11 @@ Each product file (`DESIGN-<product>.md`):
 - Opens with: `> Extends [Base DESIGN.md](./DESIGN.md). Only overrides and additions are documented below.`
 - Documents ONLY tokens that differ from or add to the base
 - Uses the same section numbering (skip sections with no overrides)
-- References base values by name when showing what changed: "Primary shifts from Base Blue (`#2563eb`) to Product Purple (`#7c3aed`)"
+- References base values by name when showing what changed
 
 ### Consistency Rules
 
-- Terminology MUST be consistent across all files. If the base calls a color "Action Default," every product file uses "Action Default" (not "Primary Blue" in one and "CTA Color" in another).
+- Terminology MUST be consistent across all files.
 - Section structure is identical across all files.
 - Cross-file references use relative markdown links.
 
@@ -897,7 +1458,7 @@ Each product file (`DESIGN-<product>.md`):
 Every generated DESIGN.md begins with exactly three HTML comment lines:
 
 ```
-<!-- Generated: YYYY-MM-DD | Source: https://example.com | Pages: N | Framework: name|none -->
+<!-- Generated: YYYY-MM-DD | Source: https://example.com | Pages: N | Framework: name|none | Format: v2 -->
 <!-- This is not the official design system. Colors, fonts, and spacing may not be 100% accurate. -->
 <!-- Generated by design-md-generator (https://github.com/jasonhnd/design-md-generator) -->
 ```
@@ -930,8 +1491,9 @@ These rules apply across ALL sections of the DESIGN.md:
 - No transition phrases: never write "Let's look at...", "In this section, we'll explore...", "Now let's move on to...", "As we can see...", "It's worth noting..."
 
 ### Structure
-- Sections numbered with period: `## 1.`, `## 2.`, through `## 9.`
+- Sections numbered with period: `## 0.`, `## 1.`, through `## 13.`
 - Section 6.5 uses `## 6.5.`
+- Optional sections: `## 14.`, `## 15.`, `## 16.`, `## 17.`
 - No table of contents
 - No YAML front-matter beyond the three HTML comment lines
 - File ends with a newline
@@ -942,9 +1504,10 @@ These rules apply across ALL sections of the DESIGN.md:
 - Empty cells use a single dash (`-`) or are left blank
 
 ### Overall Length
-- Target: 250-400 lines total
-- Under 250 indicates missing detail
-- Over 400 indicates redundancy -- tighten prose and remove restatements
+- Target: 400-650 lines total (core sections only)
+- Under 350 indicates missing detail
+- Over 700 indicates redundancy -- tighten prose and remove restatements
+- Optional sections 14-17 may add 50-150 lines each
 
 ---
 

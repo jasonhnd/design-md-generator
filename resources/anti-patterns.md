@@ -511,6 +511,198 @@ State the framework explicitly. Where possible, provide both raw values and fram
 
 ---
 
+### AP-21: Missing Brand Context
+**Description**: Writing design system values without identifying who the brand is, who the audience is, or what market position the system supports.
+**Bad Example**:
+```markdown
+## Overview
+The design system uses a blue accent (#2564eb) with Inter font and an 8px spacing grid.
+```
+**Why It's Wrong**: This describes parameters without identity. The same sentence could describe a healthcare dashboard, a developer tool, or a children's learning platform. Without brand context, the DESIGN.md cannot guide decisions about tone, voice, or component appropriateness.
+**Correct Approach**:
+```markdown
+## Overview
+Stripe's design system reflects fintech infrastructure made visible -- a system
+serving developers and finance teams where precision signals trustworthiness.
+The accent blue-violet (#533afd) anchors interactive elements across a palette
+that balances institutional confidence with approachable warmth.
+```
+Name the brand, signal the audience, connect visual choices to brand position.
+**Detection**: Check the opening section for a company/product name and at least one audience or market-position signal. If both are absent, flag AP-21.
+
+---
+
+### AP-22: Generic Voice
+**Description**: Using casual, enthusiastic, or Silicon Valley-default copy conventions for brands where they are inappropriate.
+**Bad Example**:
+```markdown
+## Content & Voice
+- Button text: "Get Started!", "Let's Go!", "Try It Free!"
+- Error messages: "Oops! Something went wrong 😅"
+- Empty state: "Nothing here yet! Start creating ✨"
+```
+*(For a Japanese utility company's customer portal)*
+**Why It's Wrong**: Exclamation marks, emoji, and casual contractions violate the formality expectations of the brand's audience and market. A utility company in Japan communicating with residential customers requires institutional respect, not startup enthusiasm.
+**Correct Approach**:
+```markdown
+## Content & Voice
+- Button text: "お申し込み", "確認する", "次へ"
+- Error messages: "入力内容をご確認ください。"
+- Empty state: "現在、表示できるデータはありません。"
+- Tone: Formal, respectful, institutional. No emoji. No exclamation marks in UI text.
+```
+Derive voice from the brand's actual UI text, not from Western SaaS conventions.
+**Detection**: Compare button text and microcopy against the identified brand category. Flag if casual/enthusiastic copy appears for formal/institutional brands.
+
+---
+
+### AP-23: No Accessibility Contract
+**Description**: Documenting colors, typography, and components without stating WCAG conformance level, contrast ratios, focus specifications, or touch target requirements.
+**Bad Example**:
+```markdown
+## Color Palette
+| Role       | Value   |
+|------------|---------|
+| Background | #ffffff |
+| Text       | #6b7280 |
+| Accent     | #3b82f6 |
+```
+*(No contrast ratios, no WCAG level, no focus ring spec)*
+**Why It's Wrong**: `#6b7280` on `#ffffff` has a contrast ratio of 4.6:1, which barely passes WCAG AA for normal text but fails for large text expectations that many teams apply universally. Without stating the ratio, implementers cannot evaluate compliance.
+**Correct Approach**:
+```markdown
+## Color Palette
+| Role       | Value   | On Background | Contrast | WCAG AA |
+|------------|---------|---------------|----------|---------|
+| Text       | #6b7280 | #ffffff       | 4.6:1    | Pass (normal) |
+| Accent     | #3b82f6 | #ffffff       | 3.1:1    | Fail (normal), Pass (large) |
+
+## Accessibility Contract
+- Target: WCAG 2.1 AA
+- Focus ring: 2px solid #3b82f6, 2px offset
+- Minimum touch target: 44x44px
+```
+**Detection**: Search for "WCAG", "contrast", "focus ring", "touch target" in the document. If none are present, flag AP-23.
+
+---
+
+### AP-24: State Blindness
+**Description**: Documenting only the default/resting state of components, ignoring loading, empty, error, disabled, and success states.
+**Bad Example**:
+```markdown
+## Data Table
+Background: #ffffff | Header: #f9fafb | Border: 1px solid #e5e7eb
+Row text: 14px Inter weight 400 | Header text: 12px weight 600 uppercase
+```
+**Why It's Wrong**: A data table is empty when filtered results return nothing, loading when fetching, errored when the API fails, and may show selected rows. Documenting only the data-present state means implementers will invent the other states, creating visual inconsistency.
+**Correct Approach**:
+```markdown
+## Data Table
+| State | Description |
+|---|---|
+| Default | Background #ffffff, header #f9fafb, row text 14px/400 |
+| Loading | Skeleton rows: 3 shimmer rows at 40px height, #f3f4f6 to #e5e7eb animation |
+| Empty | Centered illustration + "No results found" at 14px #6b7280 + optional CTA |
+| Error | Inline error banner above table: #fef2f2 background, #991b1b text |
+| Row hover | Background #f9fafb |
+| Row selected | Background #eff6ff, left border 2px solid #3b82f6 |
+```
+**Detection**: For each interactive or data-dependent component, check for at least 3 states beyond default. If only the default state is documented, flag AP-24.
+
+---
+
+### AP-25: Unnamed Principles
+**Description**: Describing what the system does technically without naming the design principle behind the decision.
+**Bad Example**:
+```markdown
+## Shadows
+The system uses blue-tinted shadows with rgba(50,50,93,0.25) instead of
+standard black shadows.
+```
+**Why It's Wrong**: The observation is correct but unmemorable. Without a name, the principle cannot be referenced in code reviews, design critiques, or component discussions. It becomes a floating fact instead of a system concept.
+**Correct Approach**:
+```markdown
+## Shadows
+The system follows a principle of **chromatic depth**: where most systems use
+neutral gray or black shadows, this system tints elevation shadows with brand
+navy (`rgba(50,50,93,0.25)`), creating shadows that feel integrated with the
+palette rather than generically applied.
+```
+Name the principle in bold on first use. Reference it by name in subsequent sections.
+**Detection**: Check the atmosphere, shadow, typography, and color sections for bold-formatted principle names. If no section contains a named principle, flag AP-25.
+
+---
+
+### AP-26: Convention Assumption
+**Description**: Documenting a system's choices without contrasting them with the typical approach, leaving the reader unable to understand what makes this system distinctive.
+**Bad Example**:
+```markdown
+## Typography
+Headlines use weight 300 at 48px with -2.4px letter-spacing.
+```
+**Why It's Wrong**: The reader has no frame of reference. They do not know that weight 300 for headlines is unusual (most systems use 600-700), or that -2.4px letter-spacing is extreme (most systems use -0.5px to -1px). Without the contrast, the distinctive choices feel like arbitrary parameters.
+**Correct Approach**:
+```markdown
+## Typography
+Headlines use weight 300 at 48px -- the opposite of the conventional 600-700
+headline weight. This whispered authority trusts whitespace and size, not
+boldness, to create hierarchy. The -2.4px letter-spacing is 3-4x more
+aggressive than the typical -0.5px to -1px, creating text that feels
+compressed and infrastructure-like.
+```
+State the convention, then state how this system departs from it.
+**Detection**: Check for comparative language ("unlike", "where most", "rather than", "instead of", "the conventional") in the atmosphere and typography sections. If none appears in a document with distinctive choices, flag AP-26.
+
+---
+
+### AP-27: Frequency Ignorance
+**Description**: Documenting colors, shadows, or radius values without indicating which ones dominate the system and which are rare exceptions.
+**Bad Example**:
+```markdown
+## Colors
+- #171717 — text color
+- #5e6ad2 — accent
+- #fafafa — surface
+- #e5e7eb — border
+```
+**Why It's Wrong**: This flat list implies all four colors have equal importance. In reality, `#171717` may appear on 62% of text elements while `#5e6ad2` appears on only 3%. Without frequency, a developer might use the accent color as freely as the text color, breaking the system's restraint.
+**Correct Approach**:
+```markdown
+## Colors
+- #171717 — text color [dominant: 62% of text elements]
+- #fafafa — surface [dominant: primary background for cards and panels]
+- #e5e7eb — border [common: appears on most bordered elements]
+- #5e6ad2 — accent [rare: 3% of elements, reserved for interactive states]
+```
+Frequency data transforms a color list into a usage strategy.
+**Detection**: Check the color section for frequency indicators (percentage, rank, tier like dominant/common/rare, or usage count). If no color has frequency data, flag AP-27.
+
+---
+
+### AP-28: Emoji in Formal Brand
+**Description**: Including emoji in copy guidelines, empty states, or error messages for a brand whose tone is formal, institutional, or conservative.
+**Bad Example**:
+```markdown
+## Content Voice
+- Success: "Changes saved! 🎉"
+- Error: "Something went wrong 😕 Please try again."
+- Empty: "No projects yet ✨ Create your first one!"
+```
+*(For a B2B financial services platform)*
+**Why It's Wrong**: Emoji in a financial services context undermines the institutional trust the brand requires. The extracted UI text contained zero emoji, but the LLM added them from training data defaults.
+**Correct Approach**:
+```markdown
+## Content Voice
+- Emoji policy: None. All feedback uses text and icons only.
+- Success: "Changes saved successfully."
+- Error: "An error occurred. Please try again or contact support."
+- Empty: "No projects found. Create a new project to get started."
+```
+Match the emoji policy to the brand's observed behavior. If the source contains no emoji, the output must contain no emoji.
+**Detection**: If the brand is classified as formal/institutional and the document contains emoji in copy examples, flag AP-28. Also flag if the extracted source text contains zero emoji but the output introduces them.
+
+---
+
 ## Summary Checklist
 
 Use this checklist when reviewing a generated DESIGN.md:
@@ -535,3 +727,11 @@ Use this checklist when reviewing a generated DESIGN.md:
 - [ ] **AP-18**: Gradients include full definition with stops and angle
 - [ ] **AP-19**: Layout specs include column count, max-width, and breakpoints
 - [ ] **AP-20**: Detected CSS framework named and mapped to output values
+- [ ] **AP-21**: Brand context present -- not writing design values in a vacuum
+- [ ] **AP-22**: Voice matches brand -- no generic enthusiasm for formal brands
+- [ ] **AP-23**: Accessibility contract present -- contrast ratios, focus specs, touch targets
+- [ ] **AP-24**: All component states documented -- not just the happy path
+- [ ] **AP-25**: Design principles are named -- decisions have vocabulary, not just values
+- [ ] **AP-26**: System contrasted with convention -- reader knows what makes this system different
+- [ ] **AP-27**: Frequency data present -- reader knows which values dominate
+- [ ] **AP-28**: Emoji policy matches brand -- no emoji in formal copy, no sterility in playful brands

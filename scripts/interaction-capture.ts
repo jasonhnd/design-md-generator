@@ -1,5 +1,11 @@
 import type { Page } from 'playwright';
-import type { InteractionData, InteractionCapture } from './types';
+import type {
+  InteractionData,
+  InteractionCapture,
+  LoadingStateInfo,
+  EmptyStateInfo,
+  ErrorStateInfo,
+} from './types';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -335,6 +341,296 @@ function withTimeout<T>(
   ]);
 }
 
+// ─── Loading State Detection ────────────────────────────────────────────────
+
+const LOADING_CLASS_PATTERNS = ['loading', 'spinner', 'skeleton', 'shimmer', 'placeholder'];
+const LOADING_STYLE_PROPS = [
+  'backgroundColor', 'opacity', 'animation', 'animationName',
+  'backgroundImage', 'borderRadius', 'width', 'height',
+] as const;
+
+async function detectLoadingStates(page: Page): Promise<LoadingStateInfo[]> {
+  return page.evaluate(
+    ({ classPatterns, styleProps }) => {
+      const results: LoadingStateInfo[] = [];
+      const seen = new Set<string>();
+
+      // Class-based detection
+      for (const pattern of classPatterns) {
+        const els = document.querySelectorAll(`[class*="${pattern}"]`);
+        for (const el of els) {
+          const classes = (el as HTMLElement).className;
+          if (typeof classes !== 'string') continue;
+          const key = `class:${classes}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+
+          const computed = window.getComputedStyle(el);
+          const treatment: Record<string, string> = {};
+          for (const prop of styleProps) {
+            const cssName = prop.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+            const val = computed.getPropertyValue(cssName);
+            if (val && val !== 'none' && val !== 'normal' && val !== '0s') {
+              treatment[prop] = val;
+            }
+          }
+
+          results.push({
+            selector: el.tagName.toLowerCase(),
+            classes,
+            detectionMethod: 'class',
+            visualTreatment: treatment,
+          });
+        }
+      }
+
+      // aria-busy detection
+      const busyEls = document.querySelectorAll('[aria-busy="true"]');
+      for (const el of busyEls) {
+        const classes = typeof (el as HTMLElement).className === 'string'
+          ? (el as HTMLElement).className : '';
+        const key = `busy:${classes}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        const computed = window.getComputedStyle(el);
+        const treatment: Record<string, string> = {};
+        for (const prop of styleProps) {
+          const cssName = prop.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+          const val = computed.getPropertyValue(cssName);
+          if (val && val !== 'none' && val !== 'normal') {
+            treatment[prop] = val;
+          }
+        }
+
+        results.push({
+          selector: el.tagName.toLowerCase(),
+          classes,
+          detectionMethod: 'aria-busy',
+          visualTreatment: treatment,
+        });
+      }
+
+      // role="progressbar" detection
+      const progressEls = document.querySelectorAll('[role="progressbar"]');
+      for (const el of progressEls) {
+        const classes = typeof (el as HTMLElement).className === 'string'
+          ? (el as HTMLElement).className : '';
+        const key = `progress:${classes}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        const computed = window.getComputedStyle(el);
+        const treatment: Record<string, string> = {};
+        for (const prop of styleProps) {
+          const cssName = prop.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+          const val = computed.getPropertyValue(cssName);
+          if (val && val !== 'none' && val !== 'normal') {
+            treatment[prop] = val;
+          }
+        }
+
+        results.push({
+          selector: el.tagName.toLowerCase(),
+          classes,
+          detectionMethod: 'role-progressbar',
+          visualTreatment: treatment,
+        });
+      }
+
+      return results;
+    },
+    { classPatterns: LOADING_CLASS_PATTERNS, styleProps: [...LOADING_STYLE_PROPS] },
+  );
+}
+
+// ─── Empty State Detection ──────────────────────────────────────────────────
+
+const EMPTY_CLASS_PATTERNS = ['empty', 'no-data', 'no-results', 'zero-state', 'empty-state'];
+const EMPTY_TEXT_PATTERNS = ['no results', 'nothing here', 'get started', 'no items', 'no data'];
+
+async function detectEmptyStates(page: Page): Promise<EmptyStateInfo[]> {
+  return page.evaluate(
+    ({ classPatterns, textPatterns }) => {
+      const results: EmptyStateInfo[] = [];
+      const seen = new Set<string>();
+
+      // Class-based detection
+      for (const pattern of classPatterns) {
+        const els = document.querySelectorAll(`[class*="${pattern}"]`);
+        for (const el of els) {
+          const classes = (el as HTMLElement).className;
+          if (typeof classes !== 'string') continue;
+          const key = `class:${classes}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+
+          const textContent = (el.textContent ?? '').trim().slice(0, 200);
+          const hasIcon = el.querySelector('svg, img, [class*="icon"]') !== null;
+          const hasHeading = el.querySelector('h1, h2, h3, h4, h5, h6') !== null;
+          const bodyEls = el.querySelectorAll('p, span');
+          const hasBody = Array.from(bodyEls).some((b) => (b.textContent ?? '').trim().length > 10);
+          const hasCta = el.querySelector('button, a[href], [role="button"]') !== null;
+
+          results.push({
+            selector: el.tagName.toLowerCase(),
+            classes,
+            textContent,
+            hasIcon,
+            hasHeading,
+            hasBody,
+            hasCta,
+          });
+        }
+      }
+
+      // Text-based detection (look for containers with empty-state text)
+      if (results.length === 0) {
+        const allElements = document.querySelectorAll('div, section, main, article');
+        for (const el of allElements) {
+          const text = (el.textContent ?? '').trim().toLowerCase();
+          const isMatch = textPatterns.some((p: string) => text.includes(p));
+          if (!isMatch) continue;
+
+          // Only consider relatively small containers (not the whole page)
+          const children = el.children.length;
+          if (children > 10) continue;
+
+          const classes = typeof (el as HTMLElement).className === 'string'
+            ? (el as HTMLElement).className : '';
+          const key = `text:${text.slice(0, 50)}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+
+          const hasIcon = el.querySelector('svg, img, [class*="icon"]') !== null;
+          const hasHeading = el.querySelector('h1, h2, h3, h4, h5, h6') !== null;
+          const bodyEls = el.querySelectorAll('p, span');
+          const hasBody = Array.from(bodyEls).some((b) => (b.textContent ?? '').trim().length > 10);
+          const hasCta = el.querySelector('button, a[href], [role="button"]') !== null;
+
+          results.push({
+            selector: el.tagName.toLowerCase(),
+            classes,
+            textContent: text.slice(0, 200),
+            hasIcon,
+            hasHeading,
+            hasBody,
+            hasCta,
+          });
+
+          if (results.length >= 5) break;
+        }
+      }
+
+      return results;
+    },
+    { classPatterns: EMPTY_CLASS_PATTERNS, textPatterns: EMPTY_TEXT_PATTERNS },
+  );
+}
+
+// ─── Error State Detection ──────────────────────────────────────────────────
+
+const ERROR_CLASS_PATTERNS = ['error', 'invalid', 'danger', 'alert'];
+const ERROR_STYLE_PROPS = [
+  'color', 'backgroundColor', 'borderColor', 'borderWidth',
+  'outline', 'boxShadow', 'backgroundImage',
+] as const;
+
+async function detectErrorStates(page: Page): Promise<ErrorStateInfo[]> {
+  return page.evaluate(
+    ({ classPatterns, styleProps }) => {
+      const results: ErrorStateInfo[] = [];
+      const seen = new Set<string>();
+
+      // Class-based detection
+      for (const pattern of classPatterns) {
+        const els = document.querySelectorAll(`[class*="${pattern}"]`);
+        for (const el of els) {
+          const classes = (el as HTMLElement).className;
+          if (typeof classes !== 'string') continue;
+          const key = `class:${classes}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+
+          const computed = window.getComputedStyle(el);
+          const treatment: Record<string, string> = {};
+          for (const prop of styleProps) {
+            const cssName = prop.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+            const val = computed.getPropertyValue(cssName);
+            if (val && val !== 'none' && val !== 'normal') {
+              treatment[prop] = val;
+            }
+          }
+
+          results.push({
+            selector: el.tagName.toLowerCase(),
+            classes,
+            detectionMethod: 'class',
+            visualTreatment: treatment,
+          });
+        }
+      }
+
+      // aria-invalid detection
+      const invalidEls = document.querySelectorAll('[aria-invalid="true"]');
+      for (const el of invalidEls) {
+        const classes = typeof (el as HTMLElement).className === 'string'
+          ? (el as HTMLElement).className : '';
+        const key = `invalid:${classes}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        const computed = window.getComputedStyle(el);
+        const treatment: Record<string, string> = {};
+        for (const prop of styleProps) {
+          const cssName = prop.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+          const val = computed.getPropertyValue(cssName);
+          if (val && val !== 'none' && val !== 'normal') {
+            treatment[prop] = val;
+          }
+        }
+
+        results.push({
+          selector: el.tagName.toLowerCase(),
+          classes,
+          detectionMethod: 'aria-invalid',
+          visualTreatment: treatment,
+        });
+      }
+
+      // role="alert" detection
+      const alertEls = document.querySelectorAll('[role="alert"]');
+      for (const el of alertEls) {
+        const classes = typeof (el as HTMLElement).className === 'string'
+          ? (el as HTMLElement).className : '';
+        const key = `alert:${classes}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        const computed = window.getComputedStyle(el);
+        const treatment: Record<string, string> = {};
+        for (const prop of styleProps) {
+          const cssName = prop.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+          const val = computed.getPropertyValue(cssName);
+          if (val && val !== 'none' && val !== 'normal') {
+            treatment[prop] = val;
+          }
+        }
+
+        results.push({
+          selector: el.tagName.toLowerCase(),
+          classes,
+          detectionMethod: 'role-alert',
+          visualTreatment: treatment,
+        });
+      }
+
+      return results;
+    },
+    { classPatterns: ERROR_CLASS_PATTERNS, styleProps: [...ERROR_STYLE_PROPS] },
+  );
+}
+
 // ─── Main Export ─────────────────────────────────────────────────────────────
 
 export async function captureInteractions(page: Page): Promise<InteractionData> {
@@ -382,5 +678,31 @@ export async function captureInteractions(page: Page): Promise<InteractionData> 
     // best effort
   }
 
-  return { captures };
+  // Detect loading, empty, and error states
+  let loadingStates: LoadingStateInfo[] | undefined;
+  let emptyStates: EmptyStateInfo[] | undefined;
+  let errorStates: ErrorStateInfo[] | undefined;
+
+  try {
+    loadingStates = await detectLoadingStates(page);
+    if (loadingStates.length === 0) loadingStates = undefined;
+  } catch {
+    // loading state detection failed, continue
+  }
+
+  try {
+    emptyStates = await detectEmptyStates(page);
+    if (emptyStates.length === 0) emptyStates = undefined;
+  } catch {
+    // empty state detection failed, continue
+  }
+
+  try {
+    errorStates = await detectErrorStates(page);
+    if (errorStates.length === 0) errorStates = undefined;
+  } catch {
+    // error state detection failed, continue
+  }
+
+  return { captures, loadingStates, emptyStates, errorStates };
 }

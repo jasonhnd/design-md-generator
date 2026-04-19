@@ -15,6 +15,7 @@ import type {
   MediaBreakpoint,
   RadiusToken,
   ShadowToken,
+  StabilityClassification,
   TypographyLevel,
 } from './types';
 
@@ -368,6 +369,175 @@ export function classifyShadow(value: string): 'border-shadow' | 'ring' | 'eleva
   if (offsetY > 0 && blur > 0) return 'elevation';
 
   return 'elevation';
+}
+
+// ─── Stability Classification ───────────────────────────────────────────────
+
+function classifyColorStability(color: ColorToken, _totalPages: number): StabilityClassification {
+  const signals: string[] = [];
+  let score = 0;
+
+  // Signal 1: Page coverage
+  if (color.pagesCoverage >= 0.8) { score += 30; signals.push(`pages: ${(color.pagesCoverage * 100).toFixed(0)}%`); }
+  else if (color.pagesCoverage >= 0.5) { score += 20; signals.push(`pages: ${(color.pagesCoverage * 100).toFixed(0)}%`); }
+  else if (color.pagesCoverage < 0.2) { score -= 20; signals.push('single-page'); }
+
+  // Signal 2: Usage dimensions
+  const usedDimensions = Object.entries(color.usedAs).filter(([, v]) => v > 0).length;
+  if (color.usedAs.textColor > 0 || color.usedAs.borderColor > 0) { score += 25; signals.push('text/border usage'); }
+  if (usedDimensions >= 3) { score += 15; signals.push(`${usedDimensions} usage dimensions`); }
+  if (usedDimensions === 1 && (color.usedAs.bgColor > 0 || color.usedAs.gradientColor > 0)) { score -= 15; signals.push('bg/gradient only'); }
+
+  // Signal 3: CSS variable presence
+  if (color.cssVariableNames.length > 0) { score += 20; signals.push(`css-var: ${color.cssVariableNames[0]}`); }
+
+  // Signal 4: Frequency
+  if (color.frequency >= 500) { score += 20; signals.push(`freq: ${color.frequency}`); }
+  else if (color.frequency >= 50) { score += 10; signals.push(`freq: ${color.frequency}`); }
+  else if (color.frequency <= 5) { score -= 20; signals.push(`freq: ${color.frequency} (rare)`); }
+
+  // Signal 5: Chromaticity — achromatic colors are almost always system-level
+  const [r, g, b] = color.rgba;
+  const isAchromatic = Math.max(r, g, b) - Math.min(r, g, b) <= 25;
+  if (isAchromatic) { score += 10; signals.push('achromatic'); }
+
+  let layer: StabilityClassification['layer'];
+  if (score >= 60) layer = 'infrastructure';
+  else if (score >= 30) layer = 'system';
+  else if (score >= 0) layer = 'campaign';
+  else layer = 'content';
+
+  return { layer, confidence: Math.min(1, Math.max(0, (score + 40) / 100)), signals };
+}
+
+function classifyTypographyStability(typo: TypographyLevel): StabilityClassification {
+  const signals: string[] = [];
+  let score = 0;
+
+  // Frequency
+  if (typo.frequency >= 100) { score += 30; signals.push(`freq: ${typo.frequency}`); }
+  else if (typo.frequency >= 20) { score += 15; signals.push(`freq: ${typo.frequency}`); }
+  else if (typo.frequency <= 3) { score -= 20; signals.push(`freq: ${typo.frequency} (rare)`); }
+
+  // Structural tags (nav, header, footer → infrastructure)
+  const infraTags = ['nav', 'header', 'footer'];
+  const hasInfraTag = typo.typicalTags.some((t) => infraTags.includes(t));
+  if (hasInfraTag) { score += 25; signals.push(`tag: ${typo.typicalTags.filter((t) => infraTags.includes(t)).join(',')}`); }
+
+  // Heading tags → system
+  const headingTags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+  const hasHeadingTag = typo.typicalTags.some((t) => headingTags.includes(t));
+  if (hasHeadingTag) { score += 15; signals.push('heading tag'); }
+
+  // Body text tag
+  if (typo.typicalTags.includes('p') || typo.typicalTags.includes('span')) {
+    score += 10; signals.push('body text');
+  }
+
+  let layer: StabilityClassification['layer'];
+  if (score >= 50) layer = 'infrastructure';
+  else if (score >= 25) layer = 'system';
+  else if (score >= 0) layer = 'campaign';
+  else layer = 'content';
+
+  return { layer, confidence: Math.min(1, Math.max(0, (score + 40) / 100)), signals };
+}
+
+function classifyShadowStability(shadow: ShadowToken): StabilityClassification {
+  const signals: string[] = [];
+  let score = 0;
+
+  if (shadow.frequency >= 50) { score += 30; signals.push(`freq: ${shadow.frequency}`); }
+  else if (shadow.frequency >= 10) { score += 15; signals.push(`freq: ${shadow.frequency}`); }
+  else if (shadow.frequency <= 3) { score -= 15; signals.push(`freq: ${shadow.frequency} (rare)`); }
+
+  // System shadow types
+  if (shadow.type === 'elevation') { score += 10; signals.push('elevation type'); }
+  if (shadow.type === 'ring') { score += 10; signals.push('ring type'); }
+
+  let layer: StabilityClassification['layer'];
+  if (score >= 40) layer = 'infrastructure';
+  else if (score >= 20) layer = 'system';
+  else if (score >= 0) layer = 'campaign';
+  else layer = 'content';
+
+  return { layer, confidence: Math.min(1, Math.max(0, (score + 40) / 100)), signals };
+}
+
+function classifyRadiusStability(radius: RadiusToken, maxFrequency: number): StabilityClassification {
+  const signals: string[] = [];
+  let score = 0;
+
+  // Dominant radius
+  if (maxFrequency > 0 && radius.frequency >= maxFrequency * 0.5) {
+    score += 30; signals.push('dominant radius');
+  }
+
+  if (radius.frequency >= 50) { score += 20; signals.push(`freq: ${radius.frequency}`); }
+  else if (radius.frequency >= 10) { score += 10; signals.push(`freq: ${radius.frequency}`); }
+  else if (radius.frequency <= 3) { score -= 15; signals.push(`freq: ${radius.frequency} (rare)`); }
+
+  let layer: StabilityClassification['layer'];
+  if (score >= 40) layer = 'infrastructure';
+  else if (score >= 20) layer = 'system';
+  else if (score >= 0) layer = 'campaign';
+  else layer = 'content';
+
+  return { layer, confidence: Math.min(1, Math.max(0, (score + 40) / 100)), signals };
+}
+
+function classifyComponentStability(component: ComponentGroup): StabilityClassification {
+  const signals: string[] = [];
+  let score = 0;
+  const totalCount = component.variants.reduce((sum, v) => sum + v.count, 0);
+
+  if (totalCount >= 50) { score += 25; signals.push(`count: ${totalCount}`); }
+  else if (totalCount >= 10) { score += 10; signals.push(`count: ${totalCount}`); }
+  else if (totalCount <= 3) { score -= 15; signals.push(`count: ${totalCount} (rare)`); }
+
+  // Structural components → infrastructure
+  const infraTypes = ['Navigation', 'Footer'];
+  if (infraTypes.includes(component.type)) { score += 30; signals.push(`structural: ${component.type}`); }
+
+  // Common UI components → system
+  const systemTypes = ['Button', 'Input', 'Card', 'Badge', 'Link'];
+  if (systemTypes.includes(component.type)) { score += 15; signals.push(`ui primitive: ${component.type}`); }
+
+  let layer: StabilityClassification['layer'];
+  if (score >= 40) layer = 'infrastructure';
+  else if (score >= 20) layer = 'system';
+  else if (score >= 0) layer = 'campaign';
+  else layer = 'content';
+
+  return { layer, confidence: Math.min(1, Math.max(0, (score + 40) / 100)), signals };
+}
+
+/** Classify all tokens in a DesignTokens object by temporal stability layer. Can be called independently. */
+export function classifyTokenStability(tokens: DesignTokens): void {
+  const totalPages = tokens.meta.totalPages;
+
+  for (const color of tokens.colorTokens) {
+    color.stability = classifyColorStability(color, totalPages);
+  }
+
+  for (const typo of tokens.typographyLevels) {
+    typo.stability = classifyTypographyStability(typo);
+  }
+
+  for (const shadow of tokens.shadowTokens) {
+    shadow.stability = classifyShadowStability(shadow);
+  }
+
+  const maxRadiusFreq = tokens.radiusTokens.length > 0
+    ? Math.max(...tokens.radiusTokens.map((r) => r.frequency))
+    : 0;
+  for (const radius of tokens.radiusTokens) {
+    radius.stability = classifyRadiusStability(radius, maxRadiusFreq);
+  }
+
+  for (const component of tokens.components) {
+    component.stability = classifyComponentStability(component);
+  }
 }
 
 // ─── Main Export ─────────────────────────────────────────────────────────────
@@ -1376,7 +1546,7 @@ export function clusterTokens(pages: PageExtraction[], cssVariables: CSSVariable
 
   // ── Assemble Final Tokens ─────────────────────────────────────────────
 
-  return {
+  const result: DesignTokens = {
     meta: {
       sourceUrls: pages.map((p) => p.url),
       totalPages,
@@ -1438,6 +1608,11 @@ export function clusterTokens(pages: PageExtraction[], cssVariables: CSSVariable
 
     cssVariables,
   };
+
+  // ── Stability Classification Pass ───────────────────────────────────
+  classifyTokenStability(result);
+
+  return result;
 }
 
 // ─── Incremental Merge ──────────────────────────────────────────────────────

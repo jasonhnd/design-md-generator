@@ -1,6 +1,6 @@
 {
   "name": "design-md-gen",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Extract design systems from any website. AI-readable DESIGN.md with pixel-verified accuracy.",
   "keywords": ["design-system", "design-md", "design-tokens", "stitch", "ai-agent", "css-extraction", "playwright"],
   "author": "Jason <jason@example.com>",
